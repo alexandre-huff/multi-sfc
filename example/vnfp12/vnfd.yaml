@@ -1,0 +1,146 @@
+tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
+
+description: Ubuntu Server Template
+
+metadata:
+  template_name: ubuntu-vpn-client-vnfd
+
+topology_template:
+  node_templates:
+    VDU1:
+      type: tosca.nodes.nfv.VDU.Tacker
+      capabilities:
+        nfv_compute:
+          properties:
+            num_cpus: 1
+            mem_size: 256 MB
+            disk_size: 10 GB
+      properties:
+        image: ubuntu-server
+        availability_zone: nova
+        mgmt_driver: noop
+        name: vpn-client
+        key_name: huff_key
+        user_data_format: RAW
+        user_data: |
+            #!/bin/sh
+            sed -i -e 's/\localhost/\localhost\ vpn-client/' /etc/hosts
+            sed -i -e 's/PasswordAuthentication/#PasswordAuthentication/' /etc/ssh/sshd_config
+            systemctl restart ssh.service
+            echo 'ubuntu:123456' | chpasswd
+            cat <<EOF >> /etc/network/interfaces.d/50-cloud-init.cfg
+                post-up route del default dev \$IFACE
+
+            auto ens4
+            iface ens4 inet dhcp
+                post-up echo 1 > /proc/sys/net/ipv4/ip_forward
+            #
+            #auto ens5
+            #iface ens5 inet dhcp
+            #    post-up echo 1 > /proc/sys/net/ipv4/ip_forward
+            EOF
+            systemctl restart networking.service
+            echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC69CsT895dFfNG6dTnYN6pUPw4dQXdw0i4QqH8DaJFX8FGbb8H97zT7JWsrVUOZvRwBHl1Pg36TRDv4iu67tHoso6pMf78lGeNgktSR9qbYVkHha4EOWjNiG19iVyhsGp2aZdqP4VkCOQ2n+zqLRcUNLY4Q1w9rG95w9yYtBLPDi5LtjMQSS3Y2cIUVwmA9OKtC+2mPNm3TaqQzLZrEYHrffGWtenZ+puMDe4ZBZcn6b7Cd8iECcXdANgDgF15igOvfleTghokDgwAFJRbVJfQMUbZQwX3yDgAJODWWsE3oqfjcOE2EMd0bMZM6Gj0GQ+VMVJSR6Dw5ZNtEVFJE9I7 alexandre@tacker-vim" >> /home/ubuntu/.ssh/authorized_keys
+            #apt-get update
+            apt-get -y install openvpn
+            cat <<EOF >> /etc/openvpn/static.key
+            #
+            # 2048 bit OpenVPN static key
+            #
+            -----BEGIN OpenVPN Static key V1-----
+            3cb2a2ae75c38e268c3c031131cd7fe1
+            40002bd9dc206a636e1fd2d298b8bfcb
+            9700f463eba422dbefbf53e7fcf92f4a
+            b733b687846d763ec692149c97d83b0a
+            53b5893a0f35e9452116821edef7acb9
+            a88c13b107a2876fd5b9b214ec2eb436
+            0cb81442075a4089cb239b8d6391fd42
+            9eac8861da0fdb7a1b0952d3f04ef560
+            6bface66abf8b1a293c077cee65d04a5
+            081783791621aa3a9c1a7cb5b1d6833d
+            b9055df6495c45569e0d39153fe81ef9
+            3a2893353ee0efd174d2a99f4f141abd
+            0bbb338c3401bfce7b5e4d32fb52b5ae
+            d5c1dd6364c76798de3052eabfa601c5
+            442e84336226b566f54321fafbedc878
+            6769581b39049386e61132de52e7f5c3
+            -----END OpenVPN Static key V1-----
+            EOF
+            cat <<EOF >> /etc/openvpn/client.conf
+            remote 172.24.241.20
+            dev tun
+            ifconfig 10.9.8.2 10.9.8.1
+            secret /etc/openvpn/static.key
+            route 10.10.1.0 255.255.255.0
+            #tun-mtu 60000
+            #fragment 0
+            #mssfix 0
+            #txqueuelen 1000
+            #sndbuf 393216
+            #rcvbuf 393216
+            #cipher none
+            #auth none
+            EOF
+            systemctl daemon-reload
+            systemctl restart openvpn@client
+
+    CP121:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        management: true
+        order: 0
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL121
+        - virtualBinding:
+            node: VDU1
+
+    CP122:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 1
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL122
+        - virtualBinding:
+            node: VDU1
+
+#    CP123:
+#      type: tosca.nodes.nfv.CP.Tacker
+#      properties:
+#        order: 1
+# Se desabilitar o port_security o MASQUERADE nao funciona
+#        anti_spoofing_protection: false
+#      requirements:
+#        - virtualLink:
+#            node: VL123
+#        - virtualBinding:
+#            node: VDU1
+
+    VL121:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net_mgmt
+        vendor: Tacker
+
+    VL122:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net0
+        vendor: Tacker
+
+#    VL123:
+#      type: tosca.nodes.nfv.VL
+#      properties:
+#        network_name: public
+#        vendor: Tacker
+
+    FIP122:
+      type: tosca.nodes.network.FloatingIP
+      properties:
+        floating_network: public
+      requirements:
+        - link:
+          node: CP122

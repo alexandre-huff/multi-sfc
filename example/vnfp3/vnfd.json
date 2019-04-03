@@ -1,0 +1,94 @@
+{
+  "vnfd": {
+    "name": "vnfd3",
+    "description": "Click on OSv Template",
+    "service_types": [
+      {
+        "service_type": "vnfd"
+      }
+    ],
+    "attributes": {
+      "vnfd": {
+        "tosca_definitions_version": "tosca_simple_profile_for_nfv_1_0_0",
+        "metadata": {
+          "template_name": "sample-tosca-vnfd"
+        },
+        "topology_template": {
+          "node_templates": {
+            "VDU1": {
+              "type": "tosca.nodes.nfv.VDU.Tacker",
+              "capabilities": {
+                "nfv_compute": {
+                  "properties": {
+                    "num_cpus": 1,
+                    "mem_size": "256 MB",
+                    "disk_size": "10 GB"
+                  }
+                }
+              },
+              "properties": {
+                "image": "click-on-osv",
+                "availability_zone": "nova",
+                "mgmt_driver": "noop",
+                "name": "forwarder-3"
+              }
+            },
+            "CP31": {
+              "type": "tosca.nodes.nfv.CP.Tacker",
+              "properties": {
+                "order": 0,
+                "management": true,
+                "anti_spoofing_protection": false
+              },
+              "requirements": [
+                {
+                  "virtualLink": {
+                    "node": "VL31"
+                  }
+                },
+                {
+                  "virtualBinding": {
+                    "node": "VDU1"
+                  }
+                }
+              ]
+            },
+            "CP32": {
+              "type": "tosca.nodes.nfv.CP.Tacker",
+              "properties": {
+                "order": 1,
+                "anti_spoofing_protection": false
+              },
+              "requirements": [
+                {
+                  "virtualLink": {
+                    "node": "VL32"
+                  }
+                },
+                {
+                  "virtualBinding": {
+                    "node": "VDU1"
+                  }
+                }
+              ]
+            },
+            "VL31": {
+              "type": "tosca.nodes.nfv.VL",
+              "properties": {
+                "vendor": "Tacker",
+                "network_name": "net_mgmt"
+              }
+            },
+            "VL32": {
+              "type": "tosca.nodes.nfv.VL",
+              "properties": {
+                "vendor": "Tacker",
+                "network_name": "net0"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

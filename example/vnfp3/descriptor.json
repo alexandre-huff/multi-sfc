@@ -1,0 +1,6 @@
+{
+    "category": "firewall",
+    "type": "click",
+    "platform": "tacker",
+    "description": "Click on OSv firewall"
+}

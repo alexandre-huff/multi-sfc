@@ -1,0 +1,6 @@
+{
+    "category": "load balancer",
+    "type": "click",
+    "platform": "tacker",
+    "description": "Click on OSv Load Balancer"
+}
