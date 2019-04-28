@@ -1,0 +1,80 @@
+tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
+
+description: Ubuntu Server Template
+
+metadata:
+  template_name: ubuntu-server-vnfd
+
+topology_template:
+  node_templates:
+    VDU1:
+      type: tosca.nodes.nfv.VDU.Tacker
+      capabilities:
+        nfv_compute:
+          properties:
+            num_cpus: 1
+            mem_size: 256 MB
+            disk_size: 10 GB
+      properties:
+        image: ubuntu-server
+        availability_zone: nova
+        mgmt_driver: noop
+        name: http-server
+        key_name: huff_key
+        user_data_format: RAW
+        user_data: |
+          #!/bin/sh
+          sed -i -e 's/\localhost/\localhost\ http-server/' /etc/hosts
+          cat <<EOF >> /etc/network/interfaces.d/50-cloud-init.cfg
+              post-up route del default dev \$IFACE
+
+          auto ens4
+          iface ens4 inet dhcp
+          EOF
+          echo 'ubuntu:123456' | chpasswd
+          locale-gen pt_BR.UTF-8
+          timedatectl set-timezone America/Sao_Paulo
+          systemctl restart networking.service
+
+    CP71:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        management: true
+        order: 0
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL71
+        - virtualBinding:
+            node: VDU1
+
+    CP72:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 1
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL72
+        - virtualBinding:
+            node: VDU1
+
+    VL71:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net_mgmt
+        vendor: Tacker
+
+    VL72:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net0
+        vendor: Tacker
+
+    FIP72:
+      type: tosca.nodes.network.FloatingIP
+      properties:
+        floating_network: public
+      requirements:
+        - link:
+          node: CP72

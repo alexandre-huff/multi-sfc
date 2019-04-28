@@ -1,0 +1,6 @@
+{
+    "category": "vpn client",
+    "type": "general",
+    "platform": "tacker",
+    "description": "OpenVPN Client Floating net0"
+}

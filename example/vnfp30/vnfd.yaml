@@ -1,0 +1,99 @@
+tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
+
+description: Ubuntu VXLAN Template
+
+metadata:
+  template_name: ubuntu-vxlan-vnfd
+
+topology_template:
+  node_templates:
+    VDU1:
+      type: tosca.nodes.nfv.VDU.Tacker
+      capabilities:
+        nfv_compute:
+          properties:
+            num_cpus: 1
+            mem_size: 256 MB
+            disk_size: 10 GB
+      properties:
+        image: ubuntu-server
+        availability_zone: nova
+        mgmt_driver: noop
+        name: linux-vxlan-client
+        key_name: huff_key
+        user_data_format: RAW
+        user_data: |
+          #!/bin/sh
+          sed -i -e 's/\ localhost/\ localhost\ linux-vxlan-client/' /etc/hosts
+          sed -i -e 's/PasswordAuthentication/#PasswordAuthentication/' /etc/ssh/sshd_config
+          systemctl restart ssh.service
+          echo 'ubuntu:123456' | chpasswd
+          locale-gen pt_BR.UTF-8
+          timedatectl set-timezone America/Sao_Paulo
+          cat <<EOF >> /etc/network/interfaces.d/50-cloud-init.cfg
+              post-up route del default dev \$IFACE
+
+          auto ens4
+            iface ens4 inet dhcp
+                post-up route del default dev \$IFACE
+            
+            auto ens5
+            iface ens5 inet dhcp
+                post-up echo 1 > /proc/sys/net/ipv4/ip_forward
+          EOF
+          systemctl restart networking.service
+          echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC69CsT895dFfNG6dTnYN6pUPw4dQXdw0i4QqH8DaJFX8FGbb8H97zT7JWsrVUOZvRwBHl1Pg36TRDv4iu67tHoso6pMf78lGeNgktSR9qbYVkHha4EOWjNiG19iVyhsGp2aZdqP4VkCOQ2n+zqLRcUNLY4Q1w9rG95w9yYtBLPDi5LtjMQSS3Y2cIUVwmA9OKtC+2mPNm3TaqQzLZrEYHrffGWtenZ+puMDe4ZBZcn6b7Cd8iECcXdANgDgF15igOvfleTghokDgwAFJRbVJfQMUbZQwX3yDgAJODWWsE3oqfjcOE2EMd0bMZM6Gj0GQ+VMVJSR6Dw5ZNtEVFJE9I7 alexandre@tacker-vim" >> /home/ubuntu/.ssh/authorized_keys
+          echo "sh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/lymHq+InhmVI48dNWEnJXyQeVnID4l5UhY0yKm7K/yuAjPE+XsYc0IyDaNcsQYgdixX8dCvTsXQAoTAV2VWtKNSgl+FUbg6fPjfTMfVkIAVTb2uTmwrM0XUm+DF3Rl3/3PTM2qUJzU71WfkEV4FtUYVifp4ID8DOKelqX3/TsK5HRuE1IdulLAt3p4wox7HwJm0NK4UbEn5xvXfXLCsj8Uv/cBdZ18bE9/XPl2CA1RztRVNcHt12sM034LdlG2FgK03BAPcFDKKw/nAac9MpKRo9ANfA/uxBUJJaLq40wOvCBYUvZStG34ErZnVmBnhsH57yd7HfYny2HSztTVwF alexandre@huff" >> /home/ubuntu/.ssh/authorized_keys
+
+    CP301:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        management: true
+        order: 0
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL301
+        - virtualBinding:
+            node: VDU1
+
+    CP302:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 1
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL302
+        - virtualBinding:
+            node: VDU1
+            
+    CP303:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 2
+# Se desabilitar o port_security o MASQUERADE nao funciona
+#        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL303
+        - virtualBinding:
+            node: VDU1
+
+    VL301:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net_mgmt
+        vendor: Tacker
+
+    VL302:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net1
+        vendor: Tacker
+
+    VL303:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: public
+        vendor: Tacker

@@ -1,0 +1,79 @@
+tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
+
+description: Cirros Forwarder Template
+
+metadata:
+  template_name: cirros-forwarder-vnfd
+
+topology_template:
+  node_templates:
+    VDU1:
+      type: tosca.nodes.nfv.VDU.Tacker
+      capabilities:
+        nfv_compute:
+          properties:
+            num_cpus: 1
+            mem_size: 128 MB
+            disk_size: 1 GB
+      properties:
+        image: cirros-0.3.5-x86_64-disk
+        availability_zone: nova
+        mgmt_driver: noop
+        name: cirros-forwarder-1
+        key_name: huff_key
+        user_data_format: RAW
+        user_data: |
+          #!/bin/sh
+          sed -i -e 's/\localhost/\localhost\ cirros-forwarder-1/' /etc/hosts
+          cat <<EOF >> /etc/network/interfaces
+          	#post-up route del default dev \$IFACE
+
+          auto eth1
+          iface eth1 inet dhcp
+          	post-up route del default dev \$IFACE
+          	post-up echo 1 > /proc/sys/net/ipv4/ip_forward
+          EOF
+          ifup eth1
+
+    CP211:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        management: true
+        order: 0
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL211
+        - virtualBinding:
+            node: VDU1
+
+    CP212:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 1
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL212
+        - virtualBinding:
+            node: VDU1
+
+    VL211:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net_mgmt
+        vendor: Tacker
+
+    VL212:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net1
+        vendor: Tacker
+
+#    FIP212:
+#      type: tosca.nodes.network.FloatingIP
+#      properties:
+#        floating_network: public
+#      requirements:
+#        - link:
+#          node: CP212

@@ -1,0 +1,6 @@
+{
+    "category": "VXLAN Tunnel",
+    "type": "general",
+    "platform": "tacker",
+    "description": "Ubuntu VXLAN Client net1"
+}

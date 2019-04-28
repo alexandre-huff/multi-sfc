@@ -1,0 +1,6 @@
+{
+    "category": "forwarder",
+    "type": "general",
+    "platform" : "tacker",
+    "description": "Cirros Forwarder1 net1"
+}

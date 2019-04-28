@@ -1,0 +1,6 @@
+{
+    "category": "VPN Tunnel",
+    "type": "general",
+    "platform": "tacker",
+    "description": "OpenVPN Client Public net0"
+}

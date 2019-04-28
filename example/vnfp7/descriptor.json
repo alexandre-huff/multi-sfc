@@ -1,0 +1,6 @@
+{
+    "category": "http server",
+    "type": "general",
+    "platform": "tacker",
+    "description": "Ubuntu HTTP Server"
+}

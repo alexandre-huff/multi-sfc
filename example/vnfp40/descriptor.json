@@ -1,0 +1,6 @@
+{
+    "category": "IPSec Tunnel",
+    "type": "general",
+    "platform": "tacker",
+    "description": "Ubuntu IPSec Client net0"
+}
