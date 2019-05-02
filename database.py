@@ -43,7 +43,7 @@ class DatabaseConnection:
 
     def insert_vnf_package(self, category, vnfd_name, dir_id, vnf_type, platform, description):
         try:
-            self.db.Catalog.insert_one({
+            res = self.db.Catalog.insert_one({
                 'category': category,
                 'vnfd_name': vnfd_name,
                 'dir_id': dir_id,
@@ -55,7 +55,7 @@ class DatabaseConnection:
             logger.error(e)
             return ERROR, e
 
-        return OK
+        return OK, res
 
     def remove_vnf_package(self, vnf_pkg_id):
         try:
@@ -71,7 +71,7 @@ class DatabaseConnection:
             return ERROR
 
     def list_catalog(self, vnf_pkg_id=None, category=None,
-                     vnfd_name=None, dir_id=None):
+                     vnfd_name=None, dir_id=None, platform=None):
 
         criteria = {}
         if vnf_pkg_id:
@@ -82,6 +82,8 @@ class DatabaseConnection:
             criteria['vnfd_name'] = vnfd_name
         if dir_id:
             criteria['dir_id'] = dir_id
+        if platform:
+            criteria['platform'] = platform
 
         try:
             catalog = self.db.Catalog.find(criteria)
