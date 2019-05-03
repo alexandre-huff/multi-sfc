@@ -5,7 +5,10 @@ import time
 import yaml
 import logging
 
-from element_management import *
+from nfvo_agents import NFVOAgents
+from interface import implements
+
+from click_manager import ElementManagement
 from utils import *
 from tacker import *
 # The package fake_tacker should be used for performance testing or demo purposes. It takes out Tacker NFVO requests
@@ -16,7 +19,7 @@ from tacker import *
 logger = logging.getLogger('tacker_agent')
 
 
-class TackerAgent:
+class TackerAgent(implements(NFVOAgents)):
     """Implementation of the Tacker Agent."""
 
     def __init__(self):
@@ -28,6 +31,48 @@ class TackerAgent:
         tacker_ep = self.identity.get_endpoints()['tacker']
 
         self.tacker = Tacker(token, tacker_ep)
+
+    @staticmethod
+    def vnfd_json_yaml_parser(vnfd):
+
+        try:
+            vnfd = json.loads(vnfd)
+
+        except ValueError:
+
+            try:
+                raw_vnfd = yaml.full_load(vnfd)
+
+                try:
+                    attr_vnfd = dict()
+                    attr_vnfd['tosca_definitions_version'] = raw_vnfd['tosca_definitions_version']
+                    attr_vnfd['metadata'] = raw_vnfd['metadata']
+                    attr_vnfd['description'] = raw_vnfd['description']
+                    attr_vnfd['topology_template'] = raw_vnfd['topology_template']
+
+                    attributes = {'vnfd': attr_vnfd}
+
+                    head = dict()
+                    head['description'] = raw_vnfd['description']
+                    head['service_types'] = [{'service_type': 'vnfd'}]
+                    head['attributes'] = attributes
+
+                    vnfd = dict()
+                    vnfd['vnfd'] = head
+
+                except KeyError as e:
+                    msg = "YAML error format: %s" % e
+                    logger.error(msg)
+                    return ERROR, msg
+
+            except yaml.YAMLError:
+                msg = "VNFD should be in JSON or YAML format!"
+                logger.error(msg)
+                return ERROR, msg
+
+        vnfd['vnfd']['name'] = unique_id()
+
+        return OK, vnfd
 
     def vnfd_create(self, vnfd):
         """Create a VNF descriptor and return its ID.
@@ -176,7 +221,7 @@ class TackerAgent:
         :return: status and a few VNF instance data
         """
         # PERFORMANCE TEST and DEMO mode: uncomment the line below in order to use fake_tacker.py
-        click_function = None
+        # click_function = None
 
         response = self.tacker.vnfd_list()
         if response.status_code != 200:

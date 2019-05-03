@@ -5,11 +5,14 @@ import json
 import yaml
 import os
 import time
+import base64
+import tarfile
 from multiprocessing.pool import Pool
 
 from utils import *
 from flask import request
 from tacker_agent import TackerAgent
+from osm_agent import OSMAgent
 from shutil import rmtree
 from database import DatabaseConnection
 from copy import deepcopy
@@ -27,49 +30,9 @@ class Core:
         # self.database = DatabaseConnection()
         self.cache = MemcachedCache()
         self.tacker_agent = TackerAgent()
+        self.osm_agent = OSMAgent()
 
-    def vnfd_json_yaml_parser(self, vnfd):
-
-        try:
-            vnfd = json.loads(vnfd)
-
-        except ValueError:
-
-            try:
-                raw_vnfd = yaml.full_load(vnfd)
-
-                try:
-                    attr_vnfd = dict()
-                    attr_vnfd['tosca_definitions_version'] = raw_vnfd['tosca_definitions_version']
-                    attr_vnfd['metadata'] = raw_vnfd['metadata']
-                    attr_vnfd['description'] = raw_vnfd['description']
-                    attr_vnfd['topology_template'] = raw_vnfd['topology_template']
-
-                    attributes = {'vnfd': attr_vnfd}
-
-                    head = dict()
-                    head['description'] = raw_vnfd['description']
-                    head['service_types'] = [{'service_type': 'vnfd'}]
-                    head['attributes'] = attributes
-
-                    vnfd = dict()
-                    vnfd['vnfd'] = head
-
-                except KeyError as e:
-                    msg = "YAML error format: %s" % e
-                    logger.error(msg)
-                    return ERROR, msg
-
-            except yaml.YAMLError:
-                msg = "VNFD should be in JSON or YAML format!"
-                logger.error(msg)
-                return ERROR, msg
-
-        vnfd['vnfd']['name'] = unique_id()
-
-        return OK, vnfd
-
-    def include_package(self, vnfd, descriptor, vnf_code):
+    def include_package(self, vnfp_data):
         """
         Includes a VNF Package in the local catalog and in the file repository
 
@@ -77,34 +40,59 @@ class Core:
         """
         # TODO: consider also upload the VNF Image to the Tacker and OSM
 
+        vnfd = vnfp_data['vnfd']
+        descriptor = json.loads(vnfp_data['descriptor'])
+        try:
+            vnf_code = vnfp_data['vnf']
+        except KeyError:
+            vnf_code = ''
+
         category = descriptor['category']
         vnf_type = descriptor['type']
         platform = descriptor['platform']
         vnf_description = descriptor['description']
 
-        vnfd_status, data = self.vnfd_json_yaml_parser(vnfd)
-        if vnfd_status == OK:
-            vnfd = data
-        else:
-            return {'status': vnfd_status, 'reason': data}
-
-        vnfd_name = vnfd['vnfd']['name']
-
         if vnf_type not in [CLICK_VNF, GENERAL_VNF]:
             return {'status': ERROR, 'reason': 'VNF Package unknown type: %s' % vnf_type}
-
-        if platform not in [TACKER_NFVO, OSM_NFVO]:
-            return {'status': ERROR, 'reason': 'VNF Package unknown platform: %s' % platform}
 
         dir_id = unique_id()
         dir_name = 'repository/' + dir_id
         os.makedirs(dir_name)
 
-        vnfd = json.dumps(vnfd, indent=2, sort_keys=True)
+        if platform == TACKER_NFVO:
+            vnfd_status, data = TackerAgent.vnfd_json_yaml_parser(vnfd)
+            if vnfd_status == OK:
+                vnfd = data
+            else:
+                return {'status': vnfd_status, 'reason': data}
 
-        vnfd_file = open(dir_name + '/vnfd.json', 'w')
-        vnfd_file.write(vnfd)
-        vnfd_file.close()
+            vnfd_name = vnfd['vnfd']['name']
+
+            vnfd = json.dumps(vnfd, indent=2, sort_keys=True)
+
+            vnfd_file = open(dir_name + '/vnfd.json', 'w')
+            vnfd_file.write(vnfd)
+            vnfd_file.close()
+
+        elif platform == OSM_NFVO:
+            vnfd_bytes = vnfd.encode('utf-8')
+            vnfd_base64 = base64.b64decode(vnfd_bytes)
+
+            vnfd_file = open(dir_name + '/vnfd.tar.gz', 'wb')
+            vnfd_file.write(vnfd_base64)
+            vnfd_file.close()
+
+            # Openning tar file to get the vnfd name
+            tar = tarfile.open(dir_name + '/vnfd.tar.gz', 'r:gz')
+            tar_files = tar.getnames()
+            file_names = [f for f in tar_files if 'vnfd.yaml' in f]
+            tar_vnfd = tar.extractfile(tar.getmember(file_names[0]))
+
+            vnfd_yaml = yaml.full_load(tar_vnfd)
+            vnfd_name = vnfd_yaml['vnfd:vnfd-catalog']['vnfd'][0]['name']
+
+        else:
+            return {'status': ERROR, 'reason': 'VNF Package unknown platform: %s' % platform}
 
         if vnf_type == CLICK_VNF:
             vnf_file = open(dir_name + '/vnf.click', 'w')
@@ -112,12 +100,12 @@ class Core:
             vnf_file.close()
 
         # TODO: needs to add a function name
-        result = database.insert_vnf_package(category, vnfd_name, dir_id, vnf_type, platform, vnf_description)
+        resp, data = database.insert_vnf_package(category, vnfd_name, dir_id, vnf_type, platform, vnf_description)
 
-        if result == OK:
+        if resp == OK:
             return {'status': OK}
         else:
-            return {'status': result[0], 'reason': result[1]}
+            return {'status': resp, 'reason': data}
 
     def list_catalog(self):
         """
@@ -162,9 +150,14 @@ class Core:
         """List all instantiated VNFs in NFVO"""
 
         resp, data = self.tacker_agent.vnf_list()
-
         if resp != OK:
             return {'status': resp, 'reason': data}
+
+        resp, osm_data = self.osm_agent.vnf_list()
+        if resp != OK:
+            return {'status': resp, 'reason': data}
+
+        data.extend(osm_data)
 
         return {'status': OK, 'vnfs': data}
 
@@ -189,46 +182,53 @@ class Core:
         dir_id = catalog[0]['dir_id']
         vnfd_name = catalog[0]['vnfd_name']
         vnf_type = catalog[0]['vnf_type']
+        platform = catalog[0]['platform']
 
-        vnfd_path = 'repository/%s/vnfd.json' % dir_id
-        with open(vnfd_path) as vnfd_file:
-            vnfd_data = vnfd_file.read()
+        if platform == TACKER_NFVO:
+            vnfd_path = 'repository/%s/vnfd.json' % dir_id
+            with open(vnfd_path) as vnfd_file:
+                vnfd_data = vnfd_file.read()
 
-        vnfd_data = json.loads(vnfd_data)
-        vnfd_data['vnfd']['name'] = vnfd_name
+            vnfd_data = json.loads(vnfd_data)
+            vnfd_data['vnfd']['name'] = vnfd_name
 
-        if vnf_type == CLICK_VNF:
-            function_path = 'repository/%s/vnf.click' % dir_id
-            with open(function_path) as function_file:
-                function_data = function_file.read()
+            if vnf_type == CLICK_VNF:
+                function_path = 'repository/%s/vnf.click' % dir_id
+                with open(function_path) as function_file:
+                    function_data = function_file.read()
 
-            response = self.tacker_agent.vnf_create(vnfd_data, unique_id(), function_data)
+                response = self.tacker_agent.vnf_create(vnfd_data, unique_id(), function_data)
 
-        else:
-            response = self.tacker_agent.vnf_create(vnfd_data, unique_id())
+            else:
+                response = self.tacker_agent.vnf_create(vnfd_data, unique_id())
 
-        if response['status'] != OK:
+            if response['status'] != OK:
+                return response
+
+            db_res, data = db.insert_vnf_instance(vnf_pkg_id, response['vnfd_id'], response['vnf_id'])
+
+            # Rollback actions if database inserting fails
+            if db_res != OK:
+                error_message = 'Database error: %s' % data
+
+                logger.error("Executing rollback actions...\n%s", error_message)
+
+                resp_delete = self.tacker_agent.vnf_delete(response['vnf_id'])
+                if resp_delete == OK:
+                    logger.info("Rollback done!")
+                else:
+                    error_message.join([' ', resp_delete['reason']])
+                    logger.error(error_message)
+
+                return {'status': ERROR, 'reason': error_message}
+
+            # return instantiated vnf data
             return response
 
-        db_res, data = db.insert_vnf_instance(vnf_pkg_id, response['vnfd_id'], response['vnf_id'])
+        elif platform == OSM_NFVO:
+            pass
 
-        # Rollback actions if database inserting fails
-        if db_res != OK:
-            error_message = 'Database error: %s' % data
-
-            logger.error("Executing rollback actions...\n%s", error_message)
-
-            resp_delete = self.tacker_agent.vnf_delete(response['vnf_id'])
-            if resp_delete == OK:
-                logger.info("Rollback done!")
-            else:
-                error_message.join([' ', resp_delete['reason']])
-                logger.error(error_message)
-
-            return {'status': ERROR, 'reason': error_message}
-
-        # return instantiated vnf data
-        return response
+        return {'status': ERROR, 'reason': 'VNF Package platform %s not supported!' % platform}
 
     def destroy_vnf(self, vnf_id):
         """Destroys a given VNF in NFVO
@@ -237,18 +237,21 @@ class Core:
         :return: OK if success, or ERROR and its reason if not
         """
 
-        response = self.tacker_agent.vnf_delete(vnf_id)
+        _, vnf_instance = database.list_vnf_instances(vnf_id=vnf_id)
+
+        if vnf_instance['platform'] == TACKER_NFVO:
+            response = self.tacker_agent.vnf_delete(vnf_id)
+
+        elif vnf_instance['platform'] == OSM_NFVO:
+            response = {'status': ERROR, 'reason': 'Not implemented!'}
+
+        else:
+            response = {'status': ERROR, 'reason': 'Not implemented!'}
 
         if response['status'] != OK:
             return response
 
-        res, vnf_instance = database.list_vnf_instances(vnf_id=vnf_id)
-
-        if res != OK:
-            return response
-
-        if len(vnf_instance) > 0:
-            database.remove_vnf_instance(vnf_instance[0]['_id'])
+        database.remove_vnf_instance(vnf_instance[0]['_id'])
 
         return {'status': OK}
 

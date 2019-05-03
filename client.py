@@ -4,6 +4,7 @@
 import json
 import os
 import requests
+import base64
 from prettytable import PrettyTable
 from utils import *
 
@@ -14,14 +15,14 @@ headers = {'Content-Type': 'application/json'}
 def validate_vnfp(path):
     vnfd_file = get_vnfd_file_name(path)
     if not vnfd_file:
-        return 0
+        return False
 
     path = ''.join([os.getcwd(), '/', path])
 
     if not os.path.exists(path)                  or \
         not os.path.isfile(vnfd_file)            or \
             not os.path.isfile(path + '/descriptor.json'):
-        return 0
+        return False
 
     with open(path + '/descriptor.json', 'r') as desc_file:
         descriptor = desc_file.read()
@@ -29,9 +30,9 @@ def validate_vnfp(path):
     descriptor = json.loads(descriptor)
     if descriptor['type'] == CLICK_VNF:
         if not os.path.isfile(path + '/vnf.click'):
-            return 0
+            return False
 
-    return 1
+    return True
 
 
 def get_vnfd_file_name(path):
@@ -40,16 +41,24 @@ def get_vnfd_file_name(path):
     json_file = path + '/vnfd.json'
     yaml_file = path + '/vnfd.yaml'
 
+    files = os.listdir(path)
+    osm_pkg = [f for f in files if 'tar.gz' in f]
+    osm_pkg = path + '/' + osm_pkg[0]
+
     if os.path.isfile(json_file):
         return json_file
     elif os.path.isfile(yaml_file):
         return yaml_file
+    elif os.path.isfile(osm_pkg):
+        return osm_pkg
     else:
         return None
 
 
 def include_package():
     # TODO: also include a VNF Package with YAML descriptors (needs to parse YAML to JSON)
+
+    url = base_url + '/package'
 
     table = PrettyTable(["VNF Package", "Description", "VNF Category", "Platform"])
 
@@ -68,18 +77,18 @@ def include_package():
     print(table)
 
     vnf_package_path = input("VNF Package: ")
-    # vnf_package_path = "example/vnfp6"
+    # vnf_package_path = "osm-cirros-server"
     vnf_package_path = ''.join([package_dir, vnf_package_path])
 
     if not validate_vnfp(vnf_package_path):
         print("Invalid VNF Package!")
-        return 0
+        return
 
-    vnfd = open(get_vnfd_file_name(vnf_package_path), 'r').read()
     descriptor = open(vnf_package_path + '/descriptor.json', 'r').read()
+    platform = json.loads(descriptor)['platform']
+    vnfd_file = get_vnfd_file_name(vnf_package_path)
 
     vnf_package = {
-        'vnfd': vnfd,
         'descriptor': descriptor
     }
 
@@ -88,7 +97,19 @@ def include_package():
         vnf_function = open(vnf_package_path + '/vnf.click', 'r').read()
         vnf_package['vnf'] = vnf_function
 
-    url = base_url + '/package'
+    if platform == TACKER_NFVO:
+        vnfd = open(vnfd_file, 'r').read()
+        vnf_package['vnfd'] = vnfd
+
+    elif platform == OSM_NFVO:
+        vnfd = open(vnfd_file, 'rb').read()
+        vnfd_bytes = base64.b64encode(vnfd)
+        vnfd_str = vnfd_bytes.decode('utf-8')
+
+        vnf_package['vnfd'] = vnfd_str
+
+    else:
+        return
 
     response = requests.post(url, data=json.dumps(vnf_package), headers=headers).json()
 

@@ -39,23 +39,14 @@ app = Flask(__name__)
 core = Core()
 
 
-@app.route('/package', methods=['POST'])
-def include_package():
-    vnfd = request.json['vnfd']
-    descriptor = json.loads(request.json['descriptor'])
-    try:
-        vnf_code = request.json['vnf']
-    except KeyError:
-        vnf_code = ''
-
-    resp = core.include_package(vnfd, descriptor, vnf_code)
-
-    return jsonify(resp)
-
-
 @app.route('/catalog', methods=['GET'])
 def list_catalog():
     return jsonify(core.list_catalog())
+
+
+@app.route('/package', methods=['POST'])
+def include_package():
+    return jsonify(core.include_package(request.json))
 
 
 @app.route('/package/<pkg_id>', methods=['DELETE'])
