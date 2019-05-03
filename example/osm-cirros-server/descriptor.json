@@ -1,0 +1,6 @@
+{
+    "category": "HTTP Server",
+    "type": "general",
+    "platform": "osm",
+    "description": "Cirros HTTP Server"
+}
