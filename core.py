@@ -32,6 +32,25 @@ class Core:
         self.tacker_agent = TackerAgent()
         self.osm_agent = OSMAgent()
 
+    def _get_nfvo_agent_instance(self, platform):
+        """
+        Returns the NFVO Agent instance based on a platform
+
+        :param platform: the NFVO platform from VNF Package
+        :return: an instance of NFVO Agent
+        """
+        # try:
+        #     nfvo = getattr(self, platform)
+        # except AttributeError:
+        #     raise AttributeError('VNF Package\'s %s platform not supported!', platform)
+
+        if platform == TACKER_NFVO:
+            return self.tacker_agent
+        elif platform == OSM_NFVO:
+            return self.osm_agent
+        else:
+            raise ValueError('VNF Package\'s %s platform not supported!', platform)
+
     def include_package(self, vnfp_data):
         """
         Includes a VNF Package in the local catalog and in the file repository
@@ -42,10 +61,6 @@ class Core:
 
         vnfd = vnfp_data['vnfd']
         descriptor = json.loads(vnfp_data['descriptor'])
-        try:
-            vnf_code = vnfp_data['vnf']
-        except KeyError:
-            vnf_code = ''
 
         category = descriptor['category']
         vnf_type = descriptor['type']
@@ -95,6 +110,7 @@ class Core:
             return {'status': ERROR, 'reason': 'VNF Package unknown platform: %s' % platform}
 
         if vnf_type == CLICK_VNF:
+            vnf_code = vnfp_data['vnf']
             vnf_file = open(dir_name + '/vnf.click', 'w')
             vnf_file.write(vnf_code)
             vnf_file.close()
@@ -183,52 +199,45 @@ class Core:
         vnfd_name = catalog[0]['vnfd_name']
         vnf_type = catalog[0]['vnf_type']
         platform = catalog[0]['platform']
+        vnfp_dir = 'repository/%s' % dir_id
 
-        if platform == TACKER_NFVO:
-            vnfd_path = 'repository/%s/vnfd.json' % dir_id
-            with open(vnfd_path) as vnfd_file:
-                vnfd_data = vnfd_file.read()
+        try:
+            nfvo_agent = self._get_nfvo_agent_instance(platform)
+        except ValueError as e:
+            return {'status': ERROR, 'reason': e}
 
-            vnfd_data = json.loads(vnfd_data)
-            vnfd_data['vnfd']['name'] = vnfd_name
+        if vnf_type == CLICK_VNF:
+            function_path = 'repository/%s/vnf.click' % dir_id
+            with open(function_path) as function_file:
+                function_data = function_file.read()
 
-            if vnf_type == CLICK_VNF:
-                function_path = 'repository/%s/vnf.click' % dir_id
-                with open(function_path) as function_file:
-                    function_data = function_file.read()
+            response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, unique_id(), function_data)
 
-                response = self.tacker_agent.vnf_create(vnfd_data, unique_id(), function_data)
+        else:
+            response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, unique_id())
 
+        if response['status'] != OK:
+            return {'status': response['status'], 'reason': response['reason']}
+
+        db_res, data = db.insert_vnf_instance(vnf_pkg_id, response['vnfd_id'], response['vnf_id'])
+
+        # Rollback actions if database inserting fails
+        if db_res != OK:
+            error_message = 'Database error: %s' % data
+
+            logger.error("Executing rollback actions...\n%s", error_message)
+
+            resp_delete = nfvo_agent.vnf_delete(response['vnf_id'])
+            if resp_delete == OK:
+                logger.info("Rollback done!")
             else:
-                response = self.tacker_agent.vnf_create(vnfd_data, unique_id())
+                error_message.join([' ', resp_delete['reason']])
+                logger.error(error_message)
 
-            if response['status'] != OK:
-                return response
+            return {'status': ERROR, 'reason': error_message}
 
-            db_res, data = db.insert_vnf_instance(vnf_pkg_id, response['vnfd_id'], response['vnf_id'])
-
-            # Rollback actions if database inserting fails
-            if db_res != OK:
-                error_message = 'Database error: %s' % data
-
-                logger.error("Executing rollback actions...\n%s", error_message)
-
-                resp_delete = self.tacker_agent.vnf_delete(response['vnf_id'])
-                if resp_delete == OK:
-                    logger.info("Rollback done!")
-                else:
-                    error_message.join([' ', resp_delete['reason']])
-                    logger.error(error_message)
-
-                return {'status': ERROR, 'reason': error_message}
-
-            # return instantiated vnf data
-            return response
-
-        elif platform == OSM_NFVO:
-            pass
-
-        return {'status': ERROR, 'reason': 'VNF Package platform %s not supported!' % platform}
+        # return instantiated vnf data
+        return response
 
     def destroy_vnf(self, vnf_id):
         """Destroys a given VNF in NFVO
@@ -238,15 +247,19 @@ class Core:
         """
 
         _, vnf_instance = database.list_vnf_instances(vnf_id=vnf_id)
+        try:
+            _, vnf_pkg = database.list_catalog(vnf_pkg_id=vnf_instance[0]['vnf_pkg_id'])
+        except IndexError:
+            return {'status': ERROR, 'reason': 'VNF not found in database!'}
 
-        if vnf_instance['platform'] == TACKER_NFVO:
-            response = self.tacker_agent.vnf_delete(vnf_id)
+        platform = vnf_pkg[0]['platform']
 
-        elif vnf_instance['platform'] == OSM_NFVO:
-            response = {'status': ERROR, 'reason': 'Not implemented!'}
+        try:
+            nfvo_agent = self._get_nfvo_agent_instance(platform)
+        except ValueError as e:
+            return {'status': ERROR, 'reason': e}
 
-        else:
-            response = {'status': ERROR, 'reason': 'Not implemented!'}
+        response = nfvo_agent.vnf_delete(vnf_id)
 
         if response['status'] != OK:
             return response
@@ -914,9 +927,14 @@ class Core:
         return {'status': OK}
 
     def list_sfcs(self):
-        resp, data = self.tacker_agent.vnffg_list()
-
+        resp, data = self.tacker_agent.sfc_list()
         if resp != OK:
             return {'status': resp, 'reason': data}
 
-        return {'status': OK, 'vnffgs': data}
+        resp, osm_data = self.osm_agent.sfc_list()
+        if resp != OK:
+            return {'status': resp, 'reason': data}
+
+        data.extend(osm_data)
+
+        return {'status': OK, 'sfcs': data}

@@ -212,16 +212,23 @@ class TackerAgent(implements(NFVOAgents)):
 
         return {'status': OK}
 
-    def vnf_create(self, vnfd_data, vnf_name, click_function=None):
+    def vnf_create(self, vnfp_dir, vnfd_name, vnf_name, click_function=None):
         """Create a VNF and initialize all tasks.
 
-        :param vnfd_data: VNFD content
+        :param vnfd_dir: directory path containing the VNF Package
         :param vnf_name: a name
         :param click_function: if this is a Click VNF, then this param must have the click function content
         :return: status and a few VNF instance data
         """
         # PERFORMANCE TEST and DEMO mode: uncomment the line below in order to use fake_tacker.py
         # click_function = None
+
+        vnfd_path = '%s/vnfd.json' % vnfp_dir
+        with open(vnfd_path) as vnfd_file:
+            vnfd_data = vnfd_file.read()
+
+        vnfd_data = json.loads(vnfd_data)
+        vnfd_data['vnfd']['name'] = vnfd_name
 
         response = self.tacker.vnfd_list()
         if response.status_code != 200:
@@ -408,7 +415,7 @@ class TackerAgent(implements(NFVOAgents)):
             vnf_status = vnf['status']
 
             vnfs.append({'vnf_id': vnf_id, 'vnf_name': vnf_name, 'instance_name': instance_name,
-                         'mgmt_url': mgmt_url, 'vnfd_id': vnfd_id, 'vnf_status': vnf_status})
+                         'mgmt_url': mgmt_url, 'vnfd_id': vnfd_id, 'vnf_status': vnf_status, 'platform': TACKER_NFVO})
 
         return OK, vnfs
 
@@ -513,7 +520,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         return OK, vnffg_id
 
-    def vnffg_list(self):
+    def sfc_list(self):
         """Retrieves the list of VNFFGs in Tacker"""
 
         response = self.tacker.vnffg_list()
@@ -542,7 +549,8 @@ class TackerAgent(implements(NFVOAgents)):
                 'name': name,
                 'status': state,
                 'description': desc,
-                'vnf_chain': nfps[vnffg['forwarding_paths']]
+                'vnf_chain': nfps[vnffg['forwarding_paths']],
+                'platform': TACKER_NFVO
             })
 
         return OK, vnffgs

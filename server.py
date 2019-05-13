@@ -1,22 +1,9 @@
 #!/usr/bin/env python
 
-import string
-import random
 import logging
-from multiprocessing.pool import Pool
-
-from core import Core
-
-from utils import *
 from flask import Flask
 from flask import request, jsonify
-from tacker_agent import *
-from shutil import rmtree
-from database import DatabaseConnection
-from copy import deepcopy
-# from werkzeug.contrib.cache import MemcachedCache
-from cachelib import MemcachedCache
-
+from core import Core
 
 # LOGGING
 # basicConfig sets up all the logs from libraries

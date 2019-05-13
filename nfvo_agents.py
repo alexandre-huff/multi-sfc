@@ -9,8 +9,11 @@ class NFVOAgents(Interface):
     def vnf_list(self):
         pass
 
-    def vnf_create(self, vnfd_data, vnf_name, click_function=None):
+    def vnf_create(self, vnfp_dir, vnfd_name, vnf_name, click_function=None):
         pass
 
     def vnf_delete(self, vnf_id):
+        pass
+
+    def sfc_list(self):
         pass

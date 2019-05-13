@@ -36,10 +36,12 @@ OSM_NFVO    = 'osm'
 def create_url(vnf_ip, task):
     return ''.join(['http://', vnf_ip, ':8000/click_plugin/', task])
 
+
 # Returns an unique ID
 def unique_id():
     # return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8))
     return str(uuid.uuid4())
+
 
 # used as a template to create a new VNFFG
 vnffgd_template = {

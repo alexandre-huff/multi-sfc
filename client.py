@@ -43,7 +43,8 @@ def get_vnfd_file_name(path):
 
     files = os.listdir(path)
     osm_pkg = [f for f in files if 'tar.gz' in f]
-    osm_pkg = path + '/' + osm_pkg[0]
+    if len(osm_pkg) > 0:
+        osm_pkg = path + '/' + osm_pkg[0]
 
     if os.path.isfile(json_file):
         return json_file
@@ -233,12 +234,12 @@ def list_vnfs():
     vnfs = response['vnfs']
 
     if vnfs:
-        table = PrettyTable(["SEQ", "VNF Name", "Instance Name", "Mgmt Address", "Status"])
+        table = PrettyTable(["SEQ", "VNF Name", "Instance Name", "Mgmt Address", "Status", "Platform"])
 
         index = 0
         for vnf in vnfs:
             index += 1
-            row = [index, vnf['vnf_name'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status']]
+            row = [index, vnf['vnf_name'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform']]
             table.add_row(row)
 
         print(table)
@@ -424,14 +425,14 @@ def list_sfcs():
         print(response['status'], response['reason'], sep=': ')
         return
 
-    vnffgs = response['vnffgs']
+    vnffgs = response['sfcs']
     if vnffgs:
-        table = PrettyTable(["SEQ", "VNFFG Name", "Status", "VNF Chain", "Description"])
+        table = PrettyTable(["SEQ", "SFC Name", "Status", "Platform", "Service Function Path", "Description"])
 
         index = 0
         for vnffg in vnffgs:
             index += 1
-            row = [index, vnffg['name'], vnffg['status'], ' -> '.join(vnffg['vnf_chain']), vnffg['description']]
+            row = [index, vnffg['name'], vnffg['status'], vnffg['platform'], ' -> '.join(vnffg['vnf_chain']), vnffg['description']]
             table.add_row(row)
 
         print(table)
@@ -475,7 +476,7 @@ while True:
     print("6. Show VNF Instances")
     print("7. Compose SFC")
     print("8. Destroy SFC")
-    print("9. Show SFC Instances")
+    print("9. Show SFC & Multi-SFC Instances")
     print("0. Exit")
 
     option = input("\n> ")
