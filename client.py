@@ -17,6 +17,7 @@ def validate_vnfp(path):
     if not vnfd_file:
         return False
 
+    pkg_name = path
     path = ''.join([os.getcwd(), '/', path])
 
     if not os.path.exists(path)                  or \
@@ -28,6 +29,11 @@ def validate_vnfp(path):
         descriptor = desc_file.read()
 
     descriptor = json.loads(descriptor)
+
+    if descriptor['platform'] == OSM_NFVO:
+        if not os.path.isfile(get_nsd_file_name(pkg_name)):
+            return False
+
     if descriptor['type'] == CLICK_VNF:
         if not os.path.isfile(path + '/vnf.click'):
             return False
@@ -42,18 +48,31 @@ def get_vnfd_file_name(path):
     yaml_file = path + '/vnfd.yaml'
 
     files = os.listdir(path)
-    osm_pkg = [f for f in files if 'tar.gz' in f]
-    if len(osm_pkg) > 0:
-        osm_pkg = path + '/' + osm_pkg[0]
+    osm_vnfd = [f for f in files if 'vnf.tar.gz' in f]
+    if len(osm_vnfd) > 0:
+        osm_vnfd = path + '/' + osm_vnfd[0]
+    else:
+        osm_vnfd = ''
 
     if os.path.isfile(json_file):
         return json_file
     elif os.path.isfile(yaml_file):
         return yaml_file
-    elif os.path.isfile(osm_pkg):
-        return osm_pkg
+    elif os.path.isfile(osm_vnfd):
+        return osm_vnfd
     else:
         return None
+
+
+def get_nsd_file_name(path):
+    path = ''.join([os.getcwd(), '/', path])
+    files = os.listdir(path)
+    osm_nsd = [f for f in files if 'ns.tar.gz' in f]
+    if len(osm_nsd) > 0:
+        osm_nsd = path + '/' + osm_nsd[0]
+        return osm_nsd
+    else:
+        return ''
 
 
 def include_package():
@@ -106,8 +125,13 @@ def include_package():
         vnfd = open(vnfd_file, 'rb').read()
         vnfd_bytes = base64.b64encode(vnfd)
         vnfd_str = vnfd_bytes.decode('utf-8')
-
         vnf_package['vnfd'] = vnfd_str
+
+        nsd_file = get_nsd_file_name(vnf_package_path)
+        nsd = open(nsd_file, 'rb').read()
+        nsd_bytes = base64.b64encode(nsd)
+        nsd_str = nsd_bytes.decode('utf-8')
+        vnf_package['nsd'] = nsd_str
 
     else:
         return

@@ -92,12 +92,18 @@ class Core:
         elif platform == OSM_NFVO:
             vnfd_bytes = vnfd.encode('utf-8')
             vnfd_base64 = base64.b64decode(vnfd_bytes)
-
             vnfd_file = open(dir_name + '/vnfd.tar.gz', 'wb')
             vnfd_file.write(vnfd_base64)
             vnfd_file.close()
 
-            # Openning tar file to get the vnfd name
+            nsd = vnfp_data['nsd']
+            nsd_bytes = nsd.encode('utf-8')
+            nsd_base64 = base64.b64decode(nsd_bytes)
+            nsd_file = open(dir_name + '/nsd.tar.gz', 'wb')
+            nsd_file.write(nsd_base64)
+            nsd_file.close()
+
+            # Opening VNFD tar file to get the vnfd name
             tar = tarfile.open(dir_name + '/vnfd.tar.gz', 'r:gz')
             tar_files = tar.getnames()
             file_names = [f for f in tar_files if 'vnfd.yaml' in f]
