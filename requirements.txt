@@ -8,9 +8,12 @@ itsdangerous==1.1.0
 Jinja2==2.10.1
 MarkupSafe==1.1.1
 prettytable==0.7.2
+pycparser==2.19
+pycurl==7.43.0.2
 pylibmc==1.6.0
 pymongo==3.8.0
 python-interface==1.5.1
+python-magic==0.4.15
 PyYAML==5.1
 requests==2.21.0
 six==1.12.0

@@ -26,6 +26,9 @@ import magic
 #from os import stat
 #from os.path import basename
 
+import logging
+logger = logging.getLogger("osmclient.vnfd")
+
 class Vnfd(object):
 
     def __init__(self, http=None, client=None):
@@ -107,9 +110,17 @@ class Vnfd(object):
         #print 'HTTP CODE: {}'.format(http_code)
         #print 'RESP: {}'.format(resp)
         if http_code == 202:
-            print('Deletion in progress')
+            logger.info('Deletion in progress')
+            return
+
+
+
         elif http_code == 204:
-            print('Deleted')
+            logger.info('Deleted')
+            return
+
+
+
         else:
             msg = ""
             if resp:
@@ -162,7 +173,7 @@ class Vnfd(object):
             if not resp or 'id' not in resp:
                 raise ClientException('unexpected response from server: '.format(
                                       resp))
-            print(resp['id'])
+            return resp['id']
         else:
             msg = "Error {}".format(http_code)
             if resp:

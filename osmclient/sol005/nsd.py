@@ -163,7 +163,10 @@ class Nsd(object):
             if not resp or 'id' not in resp:
                 raise ClientException('unexpected response from server - {}'.format(
                                       resp))
-            print(resp['id'])
+            return resp['id']
+        elif http_code == 409:
+            resp = json.loads(resp)
+            raise ClientException(resp['detail'])
         else:
             msg = "Error {}".format(http_code)
             if resp:

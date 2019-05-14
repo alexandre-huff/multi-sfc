@@ -174,7 +174,7 @@ class Ns(object):
                 if not resp or 'id' not in resp:
                     raise ClientException('unexpected response from server - {} '.format(
                                       resp))
-                print(resp['id'])
+                return resp['id']
             else:
                 msg = ""
                 if resp:
