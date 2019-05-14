@@ -26,8 +26,6 @@ import magic
 #from os import stat
 #from os.path import basename
 
-import logging
-logger = logging.getLogger("osmclient.vnfd")
 
 class Vnfd(object):
 
@@ -110,17 +108,9 @@ class Vnfd(object):
         #print 'HTTP CODE: {}'.format(http_code)
         #print 'RESP: {}'.format(resp)
         if http_code == 202:
-            logger.info('Deletion in progress')
-            return
-
-
-
+            return 'Deletion in progress'
         elif http_code == 204:
-            logger.info('Deleted')
-            return
-
-
-
+            return 'Deleted'
         else:
             msg = ""
             if resp:

@@ -84,9 +84,9 @@ class Ns(object):
         #print 'HTTP CODE: {}'.format(http_code)
         #print 'RESP: {}'.format(resp)
         if http_code == 202:
-            print('Deletion in progress')
+            return 'Deletion in progress'
         elif http_code == 204:
-            print('Deleted')
+            return 'Deleted'
         else:
             msg = ""
             if resp:

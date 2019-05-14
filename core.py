@@ -250,7 +250,7 @@ class Core:
 
             logger.info('VNF %s function initialized', response['vnf_id'])
 
-        logger.info('VNF %s successfully instantiated', response['vnf_id'])
+        logger.info('VNF %s instantiated successfully', response['vnf_id'])
 
         # return instantiated vnf data
         return response
@@ -275,10 +275,14 @@ class Core:
         except ValueError as e:
             return {'status': ERROR, 'reason': e}
 
+        logger.info('Destroying VNF Instance %s', vnf_id)
+
         response = nfvo_agent.vnf_delete(vnf_id)
 
         if response['status'] != OK:
             return response
+
+        logger.info('VNF Instance %s destroyed successfully', vnf_id)
 
         database.remove_vnf_instance(vnf_instance[0]['_id'])
 

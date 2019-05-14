@@ -109,7 +109,33 @@ class OSMAgent(implements(NFVOAgents)):
         }
 
     def vnf_delete(self, vnf_id):
-        raise NotImplementedError
+
+        vnf = self.client.vnf.get(vnf_id)
+        ns = self.client.ns.get(vnf['nsr-id-ref'])
+
+        if len(ns['constituent-vnfr-ref']) > 1:
+            return {'status': ERROR, 'reason': 'A Network Service depends on this VNF'}
+
+        vnfd_id = vnf['vnfd-id']
+        ns_id = ns['id']
+        nsd_id = ns['nsd']['_id']
+
+        try:
+            resp = self.client.ns.delete(ns_id)
+            logger.info("NS Instance %s - %s", ns_id, resp)
+
+            sleep(2)
+
+            resp = self.client.nsd.delete(nsd_id)
+            logger.info("NSD %s - %s", ns_id, resp)
+
+            resp = self.client.vnfd.delete(vnfd_id)
+            logger.info("VNFD %s - %s", ns_id, resp)
+
+        except ClientException as e:
+            return {'status': ERROR, 'reason': e.args[0]}
+
+        return {'status': OK}
 
     def sfc_list(self):
 

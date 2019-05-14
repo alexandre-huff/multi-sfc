@@ -234,7 +234,6 @@ class TackerAgent(implements(NFVOAgents)):
         :param vnf_id: VNF ID in the Tacker
         :return: OK if success, or ERROR and its reason if not
         """
-        logger.info('Destroying VNF Instance %s', vnf_id)
 
         vnffgs = self.tacker.vnffg_list().json()['vnffgs']
         vnfs = []
