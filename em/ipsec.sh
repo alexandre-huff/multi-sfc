@@ -1,12 +1,10 @@
 #!/bin/bash
 # Source: https://sysadmins.co.za/setup-a-site-to-site-ipsec-vpn-with-strongswan-on-ubuntu/
 
-LOCAL_IP=172.24.240.7
-REMOTE_IP=172.24.241.10
-LOCAL_LAN=10.10.0.0/24
-REMOTE_LAN=10.10.1.0/24
-
-
+LOCAL_IP=$1
+REMOTE_IP=$2
+LOCAL_LAN=$3
+REMOTE_LAN=$4
 
 # to install IPSec and etc...
 sudo apt install strongswan -y
@@ -52,3 +50,5 @@ sudo iptables -t nat -A POSTROUTING -s ${REMOTE_LAN} -d ${LOCAL_LAN} -j MASQUERA
 sudo systemctl restart strongswan.service
 # TIP: ping on each side of IPSec in order to start the tunnel working properly
 # I don't now why yet, but by pinging on each side all stuff start working correctly
+
+exit 0

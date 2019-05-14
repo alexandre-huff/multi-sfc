@@ -1,25 +1,16 @@
 #!/bin/bash
 # use -vx after /bin/bash in order to verbose and debug the whole script
 
-LOCAL_IP=172.24.241.10
-REMOTE_IP=172.24.240.12
-IFACE=ens5
-
-ID=100
-VXLAN_LOCAL_IP=192.168.200.1/24
-VXLAN_REMOTE_IP=192.168.200.2
-
-ROUTE_NET_HOST=10.10.1.11/32
-
-ARP_PROXY_REMOTE_HOST=10.10.1.11
-ARP_PROXY_IFACE=ens4
-
-
-usage() {
-        echo "Usage: $0 {start|stop|restart|status}"
-        exit 1
-}
-
+ACTION=$1
+LOCAL_IP=$2
+REMOTE_IP=$3
+IFACE=$4
+ID=$5
+VXLAN_LOCAL_IP=$6
+VXLAN_REMOTE_IP=$7
+ROUTE_NET_HOST=$8
+ARP_PROXY_REMOTE_HOST=$9
+ARP_PROXY_IFACE=$10
 
 do_start() {
         #set -x # activate debugging from here
@@ -46,13 +37,7 @@ do_status() {
         ip route show |grep vxlan0
 }
 
-
-if [ "$#" != "1" ]; then
-        usage
-fi
-
-
-case "$1" in
+case "${ACTION}" in
   start)
         do_start
         ;;
@@ -60,7 +45,7 @@ case "$1" in
   stop)
         do_stop
         ;;
-  
+
   restart)
         do_stop
         sleep 2
