@@ -32,11 +32,6 @@ TACKER_NFVO = 'tacker'
 OSM_NFVO    = 'osm'
 
 
-# Click on OSv URL
-def create_url(vnf_ip, task):
-    return ''.join(['http://', vnf_ip, ':8000/click_plugin/', task])
-
-
 # Returns an unique ID
 def unique_id():
     # return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8))

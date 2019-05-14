@@ -8,12 +8,11 @@ import logging
 from nfvo_agents import NFVOAgents
 from interface import implements
 
-from click_manager import ElementManagement
-from utils import *
-from tacker import *
+from utils import OK, ERROR, unique_id, status, ACTIVE, TIMEOUT, TACKER_NFVO, OPTIONS
+from tacker import IdentityManager, Tacker
 # The package fake_tacker should be used for performance testing or demo purposes. It takes out Tacker NFVO requests
-# Also see beginning of the "vnf_create" function. To do it, tacker package must be replaced by fake_tacker
-# from fake_tacker import *
+# Also see in the beginning of the "instantiate_vnf" function in "Core" class.
+# from fake_tacker import IdentityManager, Tacker
 
 
 logger = logging.getLogger('tacker_agent')
@@ -24,7 +23,6 @@ class TackerAgent(implements(NFVOAgents)):
 
     def __init__(self):
         self.timeout = 300
-        self.em = ElementManagement()
 
         self.identity = IdentityManager()
         token = self.identity.get_token()
@@ -152,76 +150,13 @@ class TackerAgent(implements(NFVOAgents)):
             error_reason = 'TIMEOUT'
             return TIMEOUT, error_reason
 
-    def click_init(self, vnf_id, vnf_ip, function):
-        """Once Click VNF VM is running, initialize all tasks.
-
-        Wait at least 10 seconds until Click VNF is ready to initialize its tasks
-        The waiting timeout is up to 30 seconds before trying to write and start the function
-        Each test is executed on port TCP 8000 using intervals of 2 seconds, in order to not break the Click HTTP Server
-        """
-
-        logger.info('VNF %s Initializing click dependencies' % vnf_id)
-
-        # Wait until all vnf-level dependencies are fully loaded
-        # TODO: What is the best way to determine this sleep time? It may change from one system to another.
-        # Use 10 seconds when click takes much time to initialize, because the Click-on-OSv HTTP Server
-        # breaks if a connection is done before the all dependencies are fully loaded.
-        time.sleep(10)
-        # time.sleep(5)
-
-        timeout = time.time() + 30
-        sleep_interval = 2
-
-        while timeout > time.time():
-            try:
-
-                resp = self.em.is_ready(vnf_ip, vnf_id)
-                if resp:
-                    break
-                time.sleep(sleep_interval)
-
-            except Exception as e:
-                logger.error('Something went wrong in click_init function: %s' % e)
-
-        try:
-            # send function to VNF VM
-            response = self.em.write_function(vnf_ip, function)
-            # TODO: It returns status_core=200 even that the function has been started or not
-            # Maybe look at the response "text" parameter
-            if response.status_code != 200:
-                message = 'Unable to write click function. %s' % response.text
-                logger.error(message)
-                return {'status': ERROR, 'reason': message}
-
-            # start VNF function
-            response = self.em.start_function(vnf_ip)
-            # TODO: It returns status_core=200 even that the function has been started or not
-            # Maybe look at the response "text" parameter
-            if response.status_code != 200:
-                message = 'Unable to start click function. %s' % response.text
-                logger.error(message)
-                return {'status': ERROR, 'reason': message}
-
-        except Exception as e:
-            message = 'VNF %s functions not initialized: %s' % (vnf_id, e)
-            logger.error(message)
-            return {
-                'status': ERROR,
-                'reason': message
-            }
-
-        return {'status': OK}
-
-    def vnf_create(self, vnfp_dir, vnfd_name, vnf_name, click_function=None):
+    def vnf_create(self, vnfp_dir, vnfd_name, vnf_name):
         """Create a VNF and initialize all tasks.
 
         :param vnfd_dir: directory path containing the VNF Package
         :param vnf_name: a name
-        :param click_function: if this is a Click VNF, then this param must have the click function content
-        :return: status and a few VNF instance data
+        :return: status and some VNF instance data
         """
-        # PERFORMANCE TEST and DEMO mode: uncomment the line below in order to use fake_tacker.py
-        # click_function = None
 
         vnfd_path = '%s/vnfd.json' % vnfp_dir
         with open(vnfd_path) as vnfd_file:
@@ -285,15 +220,6 @@ class TackerAgent(implements(NFVOAgents)):
 
         vnf_ip = data
         logger.info('VNF %s is active with IP %s', vnf_id, vnf_ip)
-
-        if click_function:
-            resp = self.click_init(vnf_id, vnf_ip, click_function)
-            if resp['status'] != OK:
-                return resp
-
-            logger.info('VNF %s functions initialized', vnf_id)
-
-        logger.info('VNF %s successfully created', vnf_id)
 
         return {
             'status' : OK,

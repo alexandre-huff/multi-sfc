@@ -67,7 +67,7 @@ class OSMAgent(implements(NFVOAgents)):
 
         return TIMEOUT, 'TIMEOUT'
 
-    def vnf_create(self, vnfp_dir, vnfd_name, vnf_name, click_function=None):
+    def vnf_create(self, vnfp_dir, vnfd_name, vnf_name):
 
         vnfd_path = '%s/vnfd.tar.gz' % vnfp_dir
         nsd_path = '%s/nsd.tar.gz' % vnfp_dir

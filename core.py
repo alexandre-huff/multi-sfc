@@ -9,6 +9,7 @@ import base64
 import tarfile
 from multiprocessing.pool import Pool
 
+from click_manager import ElementManagement
 from utils import *
 from flask import request
 from tacker_agent import TackerAgent
@@ -31,6 +32,7 @@ class Core:
         self.cache = MemcachedCache()
         self.tacker_agent = TackerAgent()
         self.osm_agent = OSMAgent()
+        self.click_em = ElementManagement()
 
     def _get_nfvo_agent_instance(self, platform):
         """
@@ -184,12 +186,15 @@ class Core:
         return {'status': OK, 'vnfs': data}
 
     def instantiate_vnf(self, vnf_pkg_id, issubprocess=False):
-        """ Instantiates a given VNF in NFVO
+        """ Instantiates a given VNF and initialize its function in NFVO
 
         :param vnf_pkg_id:
         :param issubprocess: states that this function is running in a subprocess
         :return: a dict containing OK, vnfd_id, vnf_id and vnf_ip if success, or ERROR and its reason if not
         """
+        # PERFORMANCE TEST and DEMO mode: uncomment the line below in order to use fake_tacker.py
+        # click_function = None
+
         db = database
 
         # it is used to avoid fork racing conditions of the client connection of pymongo
@@ -212,15 +217,7 @@ class Core:
         except ValueError as e:
             return {'status': ERROR, 'reason': e}
 
-        if vnf_type == CLICK_VNF:
-            function_path = 'repository/%s/vnf.click' % dir_id
-            with open(function_path) as function_file:
-                function_data = function_file.read()
-
-            response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, unique_id(), function_data)
-
-        else:
-            response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, unique_id())
+        response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, unique_id())
 
         if response['status'] != OK:
             return {'status': response['status'], 'reason': response['reason']}
@@ -241,6 +238,19 @@ class Core:
                 logger.error(error_message)
 
             return {'status': ERROR, 'reason': error_message}
+
+        if vnf_type == CLICK_VNF:
+            function_path = 'repository/%s/vnf.click' % dir_id
+            with open(function_path) as function_file:
+                function_data = function_file.read()
+
+            resp = self.click_init(response['vnf_id'], response['vnf_ip'], function_data)
+            if resp['status'] != OK:
+                return resp
+
+            logger.info('VNF %s function initialized', response['vnf_id'])
+
+        logger.info('VNF %s successfully instantiated', response['vnf_id'])
 
         # return instantiated vnf data
         return response
@@ -271,6 +281,65 @@ class Core:
             return response
 
         database.remove_vnf_instance(vnf_instance[0]['_id'])
+
+        return {'status': OK}
+
+    def click_init(self, vnf_id, vnf_ip, click_function):
+        """Once Click VNF VM is running, initialize all tasks.
+
+        Wait at least 10 seconds until Click VNF is ready to initialize its tasks
+        The waiting timeout is up to 30 seconds before trying to write and start the function
+        Each test is executed on port TCP 8000 using intervals of 2 seconds, in order to not break the Click HTTP Server
+        """
+
+        logger.info('VNF %s Initializing click dependencies' % vnf_id)
+
+        # Wait until all vnf-level dependencies are fully loaded
+        # TODO: What is the best way to determine this sleep time? It may change from one system to another.
+        # Use 10 seconds when click takes much time to initialize, because the Click-on-OSv HTTP Server
+        # breaks if a connection is done before the all dependencies are fully loaded.
+        time.sleep(10)
+        # time.sleep(5)
+
+        # timeout = time.time() + 30
+        # sleep_interval = 2
+        # while timeout > time.time():
+        #     try:
+        #
+        #         resp = self.click_em.is_ready(vnf_ip, vnf_id)
+        #         if resp:
+        #             break
+        #         time.sleep(sleep_interval)
+        #
+        #     except Exception as e:
+        #         logger.error('Something went wrong in click_init function: %s' % e)
+
+        try:
+            # send function to VNF VM
+            response = self.click_em.write_function(vnf_ip, click_function)
+            # TODO: It returns status_core=200 even that the function has been started or not
+            # Maybe look at the response "text" parameter
+            if response.status_code != 200:
+                message = 'Unable to write click function. %s' % response.text
+                logger.error(message)
+                return {'status': ERROR, 'reason': message}
+
+            # start VNF function
+            response = self.click_em.start_function(vnf_ip)
+            # TODO: It returns status_core=200 even that the function has been started or not
+            # Maybe look at the response "text" parameter
+            if response.status_code != 200:
+                message = 'Unable to start click function. %s' % response.text
+                logger.error(message)
+                return {'status': ERROR, 'reason': message}
+
+        except Exception as e:
+            message = 'VNF %s functions not initialized: %s' % (vnf_id, e)
+            logger.error(message)
+            return {
+                'status': ERROR,
+                'reason': message
+            }
 
         return {'status': OK}
 
