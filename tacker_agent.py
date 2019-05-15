@@ -68,7 +68,7 @@ class TackerAgent(implements(NFVOAgents)):
                 logger.error(msg)
                 return ERROR, msg
 
-        vnfd['vnfd']['name'] = unique_id()
+        vnfd['vnfd']['name'] = vnfd['vnfd']['attributes']['vnfd']['metadata']['template_name']
 
         return OK, vnfd
 
@@ -126,7 +126,7 @@ class TackerAgent(implements(NFVOAgents)):
         # IMPORTANT: This is not related to Click VNF Functions. Do not confuse it!
 
         timeout = self.timeout
-        sleep_interval = 0.5
+        sleep_interval = 2
 
         while timeout > 0:
             response = self.tacker.vnf_show(vnf_id)
@@ -153,7 +153,8 @@ class TackerAgent(implements(NFVOAgents)):
     def vnf_create(self, vnfp_dir, vnfd_name, vnf_name):
         """Create a VNF and initialize all tasks.
 
-        :param vnfd_dir: directory path containing the VNF Package
+        :param vnfp_dir: directory path containing the VNF Package
+        :param vnfd_name: a name
         :param vnf_name: a name
         :return: status and some VNF instance data
         """
@@ -191,6 +192,19 @@ class TackerAgent(implements(NFVOAgents)):
 
         else:
             logger.info('Using an existing VNF descriptor id %s!', vnfd_id)
+
+        # Generating a unique VNF name to avoid Tacker Internal Server Error
+        seq = 1
+        vnf_name = ''.join([vnf_name, '-', str(seq)])
+        _, vnfs = self.vnf_list()
+        while True:
+            vnf_list = [vnf for vnf in vnfs if vnf['vnf_name'] == vnf_name]
+            if len(vnf_list) > 0:
+                seq += 1
+                vnf_name = vnf_name[:-1] + str(seq)
+                continue
+            break
+        # Unique VNF name until here
 
         resp, data = self.vnf_vm_create(vnfd_id, vnf_name)
 

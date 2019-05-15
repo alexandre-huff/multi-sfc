@@ -212,12 +212,14 @@ class Core:
         platform = catalog[0]['platform']
         vnfp_dir = 'repository/%s' % dir_id
 
+        vnf_name = str(vnfd_name).replace('vnfd', 'vnf')
+
         try:
             nfvo_agent = self._get_nfvo_agent_instance(platform)
         except ValueError as e:
             return {'status': ERROR, 'reason': e}
 
-        response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, unique_id())
+        response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, vnf_name)
 
         if response['status'] != OK:
             return {'status': response['status'], 'reason': response['reason']}

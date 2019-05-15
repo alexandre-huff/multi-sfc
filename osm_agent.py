@@ -90,7 +90,7 @@ class OSMAgent(implements(NFVOAgents)):
         logger.info("NSD created with id %s", nsd_id)
 
         # TODO Change static argument VIM1
-        ns_id = self.client.ns.create(nsd_id, vnf_name, 'VIM1')
+        ns_id = self.client.ns.create(nsd_id, vnf_name, 'VIM1', description=' ')
 
         status, resp = self.ns_polling(ns_id)
         if status != OK:
