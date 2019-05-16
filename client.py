@@ -325,114 +325,123 @@ def create_sfc_v2():
                 print(response['status'], response['reason'], sep=': ')
                 break
 
-    print("\nIncoming SFC Network Traffic?\n%s. Internal\n%s. External" % (INTERNAL, EXTERNAL))
-    while True:
-        origin = input("> ")
-        if origin in [INTERNAL, EXTERNAL]:
-            break
-        else:
-            print("Invalid Option!")
+    sfc_origin_data = {
+        'sfc_uuid': sfc_uuid
+    }
 
-    if origin == INTERNAL:
-        nfvo_vnfs = list_vnfs()
-        # print(nfvo_vnfs)
+    response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
+    platforms = response['platforms']
 
-        if not nfvo_vnfs:
-            return
+    for platform in platforms:
+        sfc_origin_data['platform'] = platform
 
-        print("\nChoose a VNF that generates the incoming SFC traffic, or 0 to exit")
-        vnf_origin = int(input("SEQ > "))
-
-        if vnf_origin <= 0:
-            return
-        try:
-            vnf_id = nfvo_vnfs[vnf_origin - 1]['vnf_id']
-        except IndexError:
-            print("Invalid SEQ number!")
-            return
-
-        sfc_origin_data = {
-            'origin': origin,
-            'vnf_id': vnf_id,
-            'sfc_uuid': sfc_uuid
-        }
-
+        print("\nIncoming SFC Network Traffic for '%s'?\n%s. Internal\n%s. External" % (platform, INTERNAL, EXTERNAL))
         while True:
+            origin = input("> ")
+            if origin in [INTERNAL, EXTERNAL]:
+                break
+            else:
+                print("Invalid Option!")
+
+        sfc_origin_data['origin'] = origin
+
+        if origin == INTERNAL:
+            nfvo_vnfs = list_vnfs()
+            # print(nfvo_vnfs)
+
+            if not nfvo_vnfs:
+                return
+
+            print("\nChoose a VNF that generates the incoming SFC traffic for '%s', or 0 to exit" % platform)
+            vnf_origin = int(input("SEQ > "))
+
+            if vnf_origin <= 0:
+                return
+            try:
+                vnf_id = nfvo_vnfs[vnf_origin - 1]['vnf_id']
+            except IndexError:
+                print("Invalid SEQ number!")
+                return
+
+            sfc_origin_data['vnf_id'] = vnf_id
+
+            while True:
+                response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
+
+                if response['status'] == OK:
+                    break
+
+                elif response['status'] == OPTIONS:
+                    vnf_pkg_cps = response['cp_list']
+                    cps = sorted(vnf_pkg_cps)
+                    for cp in cps:
+                        print('%s: %s' % (cp, vnf_pkg_cps[cp]['network_name']))
+
+                    cp_output = input("Output CP > ")
+                    sfc_origin_data['resource'] = cp_output
+
+                else:
+                    print(response['status'], response['reason'], sep=': ')
+                    return
+
+        else:  # if origin == EXTERNAL
             response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
 
-            if response['status'] == OK:
-                break
-
-            elif response['status'] == OPTIONS:
-                vnf_pkg_cps = response['cp_list']
-                cps = sorted(vnf_pkg_cps)
-                for cp in cps:
-                    print('%s: %s' % (cp, vnf_pkg_cps[cp]['network_name']))
-
-                cp_output = input("Output CP > ")
-                sfc_origin_data['resource'] = cp_output
-
-            else:
+            if response['status'] != OK:
                 print(response['status'], response['reason'], sep=': ')
                 return
 
-    else:  # if origin == EXTERNAL
-        sfc_origin_data = {
-            'origin': origin,
-            'sfc_uuid': sfc_uuid
+        # ACL List
+        response = requests.get(acl_url + '/%s' % platform, headers=headers).json()
+        try:
+            acl_list = response['acl']
+        except KeyError:
+            print(response['status'], response['reason'], sep=': ')
+            return
+
+        table = PrettyTable(['ID', 'Description'], sortby='ID')
+
+        for acl_id, desc in acl_list.items():
+            table.add_row([acl_id, desc])
+
+        print(table)
+
+        print("\nAdd the criteria by their respective ID (0 for done, or -1 to exit)")
+
+        acl = []
+        while True:
+            acl_criteria = input('ID > ')
+
+            if acl_criteria == "0":
+                break
+
+            if acl_criteria == "-1":
+                return
+
+            if acl_criteria not in acl_list.keys():
+                print("Invalid Criteria!")
+                continue
+
+            acl_value = input('Value > ')
+
+            acl.append({
+                acl_criteria: acl_value
+            })
+
+        acl_data = {
+            'acl': acl,
+            'sfc_uuid': sfc_uuid,
+            'platform': platform
         }
-        response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
+
+        # send ACL criteria to SFC_Core
+        response = requests.post(acl_url, headers=headers, data=json.dumps(acl_data)).json()
 
         if response['status'] != OK:
             print(response['status'], response['reason'], sep=': ')
             return
 
-    # ACL List
-    response = requests.get(acl_url, headers=headers).json()
-    acl_list = response['acl']
-
-    table = PrettyTable(['ID', 'Description'], sortby='ID')
-
-    for acl_id, desc in acl_list.items():
-        table.add_row([acl_id, desc])
-
-    print(table)
-
-    print("\nAdd the criteria by their respective ID (0 for done, or -1 to exit)")
-
-    acl = []
-    while True:
-        acl_criteria = input('ID > ')
-
-        if acl_criteria == "0":
-            break
-
-        if acl_criteria == "-1":
-            return
-
-        if acl_criteria not in acl_list.keys():
-            print("Invalid Criteria!")
-            continue
-
-        acl_value = input('Value > ')
-
-        acl.append({
-            acl_criteria: acl_value
-        })
-
-    acl_data = {
-        'acl': acl,
-        'sfc_uuid': sfc_uuid
-    }
-
-    # send ACL criteria to SFC_Core
-    response = requests.post(acl_url, headers=headers, data=json.dumps(acl_data)).json()
-
-    if response['status'] != OK:
-        print(response['status'], response['reason'], sep=': ')
-        return
-
-    # start VNFFG
+    # start SFCs
     response = requests.post(sfc_url + '/start', data=json.dumps({'sfc_uuid': sfc_uuid}), headers=headers).json()
     if response['status'] != OK:
         print(response['status'], response['reason'], sep=': ')

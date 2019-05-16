@@ -62,9 +62,9 @@ def destroy_vnf(vnf_id):
 #
 
 
-@app.route('/sfc/acl', methods=['GET'])
-def list_acl():
-    return jsonify(core.get_policies())
+@app.route('/sfc/acl/<platform>', methods=['GET'])
+def list_acl(platform):
+    return jsonify(core.get_policies(platform))
 
 
 @app.route('/sfc/uuid', methods=['GET'])
@@ -72,9 +72,9 @@ def get_sfc_uuid():
     return jsonify(core.create_sfc_uuid())
 
 
-@app.route('/vnfp/cps/<vnf_pkg_id>', methods=['GET'])
-def list_vnf_pkg_cps(vnf_pkg_id):
-    return jsonify(core.list_vnf_pkg_cps(vnf_pkg_id))
+# @app.route('/vnfp/cps/<vnf_pkg_id>', methods=['GET'])
+# def list_vnf_pkg_cps(vnf_pkg_id):
+#     return jsonify(core.list_vnf_pkg_cps(vnf_pkg_id))
 
 
 @app.route('/sfc/sfp/compose', methods=['POST'])

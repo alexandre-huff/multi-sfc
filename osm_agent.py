@@ -16,6 +16,7 @@ logger = logging.getLogger('osm_agent')
 
 
 class OSMAgent(implements(NFVOAgents)):
+    """Implementation of the OSM Agent."""
 
     def __init__(self):
         self.client = osm.Client(host='osm-nfvo.local')
@@ -49,6 +50,8 @@ class OSMAgent(implements(NFVOAgents)):
     def ns_polling(self, ns_id):
         timeout = 300
         sleep_interval = 5
+
+        logger.info("Polling NS with id %s, please wait...", ns_id)
 
         while timeout > 0:
             ns = self.client.ns.get(ns_id)
@@ -91,6 +94,7 @@ class OSMAgent(implements(NFVOAgents)):
 
         # TODO Change static argument VIM1
         ns_id = self.client.ns.create(nsd_id, vnf_name, 'VIM1', description=' ')
+        logger.info("NS created with id %s", ns_id)
 
         status, resp = self.ns_polling(ns_id)
         if status != OK:
@@ -160,3 +164,24 @@ class OSMAgent(implements(NFVOAgents)):
             })
 
         return OK, ns_list
+
+    def get_policies(self):
+        return {}
+
+    def get_sfc_template(self):
+        raise NotImplementedError
+
+    def compose_sfp(self, sfc_descriptor, vnfd_name, vnfp_dir, database, options_cp_out):
+        raise NotImplementedError
+
+    def configure_traffic_src_policy(self, sfc_descriptor, origin, vnf_id, cp_out, database):
+        raise NotImplementedError
+
+    def configure_policies(self, sfc_descriptor, acl):
+        raise NotImplementedError
+
+    def create_sfc(self, sfc_descriptor, database, core, sfc_uuid):
+        raise NotImplementedError
+
+    def destroy_sfc(self, sfc_id, core):
+        raise NotImplementedError

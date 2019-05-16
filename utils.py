@@ -39,48 +39,48 @@ def unique_id():
 
 
 # used as a template to create a new VNFFG
-vnffgd_template = {
-    "vnffgd": {
-        "name": "vnffgd1",
-        "template": {
-            "vnffgd": {
-                "tosca_definitions_version": "tosca_simple_profile_for_nfv_1_0_0",
-                "description": "Sample VNFFG template",
-                "topology_template": {
-                    "node_templates": {
-                        "Forwarding_path1": {
-                            "type": "tosca.nodes.nfv.FP.Tacker",
-                            "description": "creates path (CP12->CP22)",
-                            "properties": {
-                                "policy": {
-                                    "type": "ACL",
-                                    "criteria": []
-                                },
-                                "path": [],
-                                "id": 0
-                            }
-                        }
-                    },
-                    "description": "Sample VNFFG template",
-                    "groups": {
-                        "VNFFG1": {
-                            "type": "tosca.groups.nfv.VNFFG",
-                            "description": "HTTP to Corporate Net",
-                            "members": [
-                                "Forwarding_path1"
-                            ],
-                            "properties": {
-                                "vendor": "tacker",
-                                "connection_point": [],
-                                "version": 1.0,
-                                "constituent_vnfs": [],
-                                "number_of_endpoints": 0,
-                                "dependent_virtual_link": []
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+# vnffgd_template = {
+#     "vnffgd": {
+#         "name": "vnffgd1",
+#         "template": {
+#             "vnffgd": {
+#                 "tosca_definitions_version": "tosca_simple_profile_for_nfv_1_0_0",
+#                 "description": "Sample VNFFG template",
+#                 "topology_template": {
+#                     "node_templates": {
+#                         "Forwarding_path1": {
+#                             "type": "tosca.nodes.nfv.FP.Tacker",
+#                             "description": "creates path (CP12->CP22)",
+#                             "properties": {
+#                                 "policy": {
+#                                     "type": "ACL",
+#                                     "criteria": []
+#                                 },
+#                                 "path": [],
+#                                 "id": 0
+#                             }
+#                         }
+#                     },
+#                     "description": "Sample VNFFG template",
+#                     "groups": {
+#                         "VNFFG1": {
+#                             "type": "tosca.groups.nfv.VNFFG",
+#                             "description": "HTTP to Corporate Net",
+#                             "members": [
+#                                 "Forwarding_path1"
+#                             ],
+#                             "properties": {
+#                                 "vendor": "tacker",
+#                                 "connection_point": [],
+#                                 "version": 1.0,
+#                                 "constituent_vnfs": [],
+#                                 "number_of_endpoints": 0,
+#                                 "dependent_virtual_link": []
+#                             }
+#                         }
+#                     }
+#                 }
+#             }
+#         }
+#     }
+# }

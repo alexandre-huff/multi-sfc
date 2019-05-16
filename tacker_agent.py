@@ -2,13 +2,16 @@
 
 import json
 import time
+from multiprocessing.pool import Pool
+
 import yaml
 import logging
 
+from exceptions import NFVOAgentsException, NFVOAgentOptions
 from nfvo_agents import NFVOAgents
 from interface import implements
 
-from utils import OK, ERROR, unique_id, status, ACTIVE, TIMEOUT, TACKER_NFVO, OPTIONS
+from utils import OK, ERROR, ACTIVE, TIMEOUT, TACKER_NFVO, unique_id, status, INTERNAL, EXTERNAL
 from tacker import IdentityManager, Tacker
 # The package fake_tacker should be used for performance testing or demo purposes. It takes out Tacker NFVO requests
 # Also see in the beginning of the "instantiate_vnf" function in "Core" class.
@@ -233,7 +236,6 @@ class TackerAgent(implements(NFVOAgents)):
             return {'status': resp, 'reason': error_reason}
 
         vnf_ip = data
-        logger.info('VNF %s is active with IP %s', vnf_id, vnf_ip)
 
         return {
             'status' : OK,
@@ -302,23 +304,6 @@ class TackerAgent(implements(NFVOAgents)):
             logger.warning(error_reason)
             return {'status': ERROR, 'reason': error_reason}
 
-    def vnf_resources(self, vnf_id):
-        """List resources such as VDU and CP."""
-
-        response = self.tacker.vnf_resources(vnf_id)
-
-        if response.status_code != 200:
-            return {
-                'status': ERROR,
-                'reason': status[response.status_code]
-            }
-
-        resources = response.json()['resources']
-        return {
-            'status': OK,
-            'resources': resources
-        }
-
     def vnf_list(self):
         """ List all Tacker VNFs
 
@@ -380,38 +365,17 @@ class TackerAgent(implements(NFVOAgents)):
 
         return vnf
 
-    def sfc_create(self, vnffgd, vnf_mapping):
-        """Create a Service Function Chaining."""
+    def vnf_nfvo_resources(self, vnf_id):
+        """List resources such as VDU and CP."""
 
-        # create vnffgd
-        status, data = self.vnffgd_create(vnffgd)
+        response = self.tacker.vnf_resources(vnf_id)
 
-        if status == ERROR:
-            error_reason = 'VNFFGD could not be created: %s' % data
-            logger.error(error_reason)
-            return {'status': status, 'reason': error_reason}
+        if response.status_code != 200:
+            raise NFVOAgentsException(ERROR, status[response.status_code])
 
-        vnffgd_id = data
-        logger.info('VNFFGD created with id %s', vnffgd_id)
+        resources = response.json()['resources']
 
-        # create VNF Forwarding Graph
-        status, data = self.vnffg_create(vnffgd_id, vnf_mapping, unique_id())
-
-        if status == ERROR:
-            error_reason = 'VNF Forwarding Graph could not be created: %s' % data
-            logger.error(error_reason)
-            return {'status': status, 'reason': error_reason}
-
-        vnffg_id = data
-        logger.info('VNFFG created with id %s', vnffg_id)
-
-        logger.info('VNFFG %s successfully created', vnffg_id)
-
-        return {
-            'status': OK,
-            'vnffgd_id': vnffgd_id,
-            'vnffg_id': vnffg_id
-        }
+        return resources
 
     def vnffgd_create(self, vnffgd):
         """Create VNF Forwarding Graph Descriptor."""
@@ -526,11 +490,11 @@ class TackerAgent(implements(NFVOAgents)):
         if net_name not in net_interfaces:
             msg = "Router Floating IP interface not configured for '%s' network in tacker.conf" % net_name
             logger.error(msg)
-            return ERROR, msg
+            raise NFVOAgentsException(ERROR, msg)
 
-        return OK, net_interfaces[net_name]
+        return net_interfaces[net_name]
 
-    def select_and_validate_cp_out(self, request_data, vnf_pkg_cps, cp_in):
+    def select_and_validate_cp_out(self, options_cp_out, vnf_pkg_cps, cp_in):
         """Selects and validates the CP_out based on Tacker NFVO requirements
 
             Verify if there is another CP attached to subnet of cp_in. If not, return all CPs with OPTIONS reply.
@@ -540,13 +504,13 @@ class TackerAgent(implements(NFVOAgents)):
             OBS: Tacker/Pike does not work yet on SFCs using different subnets.
             Therefore, each SFC must be composed in the same subnet.
 
-        :param request_data: a dict containing the request data
+        :param options_cp_out: the output connection point
         :param vnf_pkg_cps: a dict containing the vnf package connection points and its subnet names
         :param cp_in: cp_in connection point name
         :return: OK and CP_out if validated, or OPTIONS, reason and cp_list if it was not possible to select
                  CP_out automatically
         """
-        # cp_out = ''
+        cp_out = options_cp_out
         # Leave just the CPs that are in the same subnet as CP_in (Tacker/Pike requirement)
         cps = vnf_pkg_cps.keys()
         cps = list(cps)
@@ -556,7 +520,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         # We are assuming that there are more than 1 CP using a same subnet. So, SFC_Core could not
         # select cp_out automatically, and user must inform a CP_out.
-        if 'cp_out' not in request_data.keys():
+        if not options_cp_out:
             # Case all other CPs are from other subnets, then there is only 1 CP available
             if len(vnf_pkg_cps) == 1:
                 cp_out = cp_in
@@ -571,13 +535,534 @@ class TackerAgent(implements(NFVOAgents)):
                 cp_out = cp_in
 
         else:
-            cp_out = request_data['cp_out']
             # vnf_pkg_cps will has here only the CPs which have the same subnet of CP_in
-            if cp_out not in vnf_pkg_cps:
-                return OPTIONS, {
-                    'status': OPTIONS,
-                    'reason': 'Invalid CP!',
-                    'cp_list': vnf_pkg_cps
-                }
+            if options_cp_out not in vnf_pkg_cps:
+                raise NFVOAgentOptions('Invalid CP!', vnf_pkg_cps)
 
-        return OK, cp_out
+        return cp_out
+
+    def get_policies(self):
+        """Returns the Tacker classifier ACL"""
+
+        return {
+            'eth_type': 'Specifies Ethernet frame type (See IEEE 802.3)',
+            'eth_src': 'Ethernet source address',
+            'eth_dst': 'Ethernet destination address',
+            'vlan_id': 'VLAN ID',
+            'vlan_pcp': 'VLAN Priority',
+            'mpls_label': 'MPLS Label',
+            'mpls_tc': 'MPLS Traffic Class',
+            'ip_dscp': 'IP DSCP (6 bits in ToS field)',
+            'ip_ecn': 'IP ECN (2 bits in ToS field)',
+            'ip_src_prefix': 'IP source address prefix',
+            'ip_dst_prefix': 'IP destination address prefix',
+            'ip_proto': 'IP protocol number',
+            'tenant_id': 'OpenStack Tenant ID',
+            'icmpv4_type': 'ICMP type',
+            'icmpv4_code': 'ICMP code',
+            'arp_op': 'ARP opcode',
+            'arp_spa': 'ARP source ipv4 address',
+            'arp_tpa': 'ARP target ipv4 address',
+            'arp_sha': 'ARP source hardware address',
+            'arp_tha': 'ARP target hardware address',
+            'ipv6_src': 'IPv6 source address',
+            'ipv6_dst': 'IPv6 destination address',
+            'ipv6_flabel': 'IPv6 Flow Label',
+            'icmpv6_type': 'ICMPv6 type',
+            'icmpv6_code': 'ICMPv6 code',
+            'ipv6_nd_target': 'Target address for ND',
+            'ipv6_nd_sll': 'Source link-layer for ND',
+            'ipv6_nd_tll': 'Target link-layer for ND',
+            'destination_port_range': 'Target port range'
+        }
+
+    def get_sfc_template(self):
+        return {
+            "vnffgd": {
+                "name": "vnffgd1",
+                "template": {
+                    "vnffgd": {
+                        "tosca_definitions_version": "tosca_simple_profile_for_nfv_1_0_0",
+                        "description": "Sample VNFFG template",
+                        "topology_template": {
+                            "node_templates": {
+                                "Forwarding_path1": {
+                                    "type": "tosca.nodes.nfv.FP.Tacker",
+                                    "description": "creates path (CP12->CP22)",
+                                    "properties": {
+                                        "policy": {
+                                            "type": "ACL",
+                                            "criteria": []
+                                        },
+                                        "path": [],
+                                        "id": 0
+                                    }
+                                }
+                            },
+                            "description": "Sample VNFFG template",
+                            "groups": {
+                                "VNFFG1": {
+                                    "type": "tosca.groups.nfv.VNFFG",
+                                    "description": "HTTP to Corporate Net",
+                                    "members": [
+                                        "Forwarding_path1"
+                                    ],
+                                    "properties": {
+                                        "vendor": "tacker",
+                                        "connection_point": [],
+                                        "version": 1.0,
+                                        "constituent_vnfs": [],
+                                        "number_of_endpoints": 0,
+                                        "dependent_virtual_link": []
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+    def list_vnf_pkg_cps(self, vnfp_dir):
+        """Retrieve all connection points of a VNF Package stored in repository
+
+        :param vnfp_dir: VNF Package directory name (from repository)
+        :return: a dict with all connection points
+        """
+
+        vnfd_path = 'repository/%s/vnfd.json' % vnfp_dir
+        with open(vnfd_path) as vnfd_file:
+            vnfd_data = vnfd_file.read()
+
+        vnfd_data = json.loads(vnfd_data)
+
+        node_templates = vnfd_data['vnfd']['attributes']['vnfd']['topology_template']['node_templates']
+
+        cps = {}
+        for atr in node_templates.keys():
+            if 'tosca.nodes.nfv.CP' in node_templates[atr]['type']:
+                virtual_link = node_templates[atr]['requirements'][0]['virtualLink']['node']
+                network_name = node_templates[virtual_link]['properties']['network_name']
+                cps[atr] = {'virtual_link': virtual_link, 'network_name': network_name}
+
+        return cps
+
+    def compose_sfp(self, sfc_descriptor, vnfd_name, vnfp_dir, database, options_cp_out):
+
+        vnf_pkg_cps = self.list_vnf_pkg_cps(vnfp_dir)
+
+        topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
+
+        # verifying if this vnf package was already added to this VNFFG (no duplication allowed)
+        if vnfd_name in topology_template['groups']['VNFFG1']['properties']['constituent_vnfs']:
+            raise NFVOAgentsException(ERROR, 'The selected VNF Package was already added in this SFC!')
+
+        cp_list = sorted(vnf_pkg_cps)
+        # we are considering that the Tacker's first CP is always reserved for the VNF management interface
+        # Thus, it is not used for VNF chaining
+        cp_list.pop(0)
+
+        # gets all virtual links in VNFFGD
+        vnffgd_vls = topology_template['groups']['VNFFG1']['properties']['dependent_virtual_link']
+
+        # getting the previous network_name for correct VNF chaining
+        previous_net_name = ''
+        if vnffgd_vls:
+            previous_vl = vnffgd_vls[-1]  # gets the current last VL in VNFFG
+
+            # gets the current last VNF Name in VNFFGD
+            previous_vnfd_name = topology_template['groups']['VNFFG1']['properties']['constituent_vnfs'][-1]
+            _, previous_vnf_pkg = database.list_catalog(vnfd_name=previous_vnfd_name)
+            previous_vnfp_dir = previous_vnf_pkg[0]['dir_id']
+
+            # gets all connection points data from previous VNFD
+            previous_vnfd_cps = self.list_vnf_pkg_cps(previous_vnfp_dir)
+
+            for cp in previous_vnfd_cps:
+                if previous_vnfd_cps[cp]['virtual_link'] == previous_vl:
+                    previous_net_name = previous_vnfd_cps[cp]['network_name']
+                    break
+
+        cp_in, cp_out = "", ""
+        # including cp_input
+        for cp in cp_list:
+            if vnffgd_vls:  # if there are previous Virtual Links included in VNFFGD
+
+                # cp_in is valid just if it is connected to the same network_name from previous VNF output
+                if vnf_pkg_cps[cp]['network_name'] == previous_net_name:
+                    cp_in = cp
+                    break
+
+            else:  # if this VNF is the first one being included in VNFFGD
+                cp_in = cp
+                break
+
+        if not cp_in:
+            raise NFVOAgentsException(ERROR, 'There is no suitable CP to chaining with the previous VNF!')
+
+        # including cp_output
+        num_cps = len(cp_list)
+        if num_cps == 1:
+            cp_out = cp_in
+        else:  # num_cps surely will be > 1, because previous return
+
+            # output CP requirements are dependent of NFVO capabilities, thus it was implemented in the related agent
+            cp_out = self.select_and_validate_cp_out(options_cp_out, vnf_pkg_cps, cp_in)
+
+        if cp_in == cp_out:
+            capability = [cp_in]
+        else:
+            capability = [cp_in, cp_out]
+
+        for cp in capability:
+            # including connection points
+            topology_template['groups']['VNFFG1']['properties']['connection_point'].append(cp)
+            # including dependent virtual links
+            virtual_link = vnf_pkg_cps[cp]['virtual_link']
+
+            # if virtual_link not in topology_template['groups']['VNFFG1']['properties']['dependent_virtual_link']:
+            topology_template['groups']['VNFFG1']['properties']['dependent_virtual_link'].append(virtual_link)
+
+        # including constituent VNFs
+        topology_template['groups']['VNFFG1']['properties']['constituent_vnfs'].append(vnfd_name)
+
+        vnf_end_points = len(capability)
+        if vnf_end_points == 1:
+            capability = capability[0]
+        else:
+            capability = ','.join(capability)
+
+        # including number of endpoints
+        topology_template['groups']['VNFFG1']['properties']['number_of_endpoints'] += vnf_end_points
+
+        path = {"forwarder": vnfd_name, "capability": capability}
+
+        # including VNF forwarding path
+        topology_template['node_templates']['Forwarding_path1']['properties']['path'].append(path)
+
+        return sfc_descriptor
+
+    def get_vnf_nfvo_resource_id(self, vnf_id, resource_name):
+        resources = self.vnf_nfvo_resources(vnf_id)
+
+        for resource in resources:
+            if resource['name'] == resource_name:
+                return resource['id']
+
+        raise NFVOAgentsException(ERROR, 'VNF Resource ID not found!')
+
+    def configure_traffic_src_policy(self, sfc_descriptor, origin, vnf_id, cp_out, database):
+
+        topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
+        # sfp = service function path
+        sfp_cps = topology_template['groups']['VNFFG1']['properties']['connection_point']
+        sfp_vnfs = topology_template['groups']['VNFFG1']['properties']['constituent_vnfs']
+        # network_src_port_id is a requirement for Tacker NFVO
+        criteria = topology_template['node_templates']['Forwarding_path1'] \
+            ['properties']['policy']['criteria']
+
+        _, catalog = database.list_catalog(vnfd_name=sfp_vnfs[0])
+        sfp_first_pkg_dir_id = catalog[0]['dir_id']
+        sfp_first_vnf_cps = self.list_vnf_pkg_cps(sfp_first_pkg_dir_id)
+
+        if origin == INTERNAL:
+            # vnf_id = request.json['vnf_id']
+
+            resp, data = database.list_vnf_instances(vnf_id=vnf_id)
+            if resp != OK:
+                raise NFVOAgentsException(resp, data)
+
+            # Only VNFs instantiated by this framework can be used as origin,
+            # as we need get information of its CP on VNF Packages
+            if not data:
+                raise NFVOAgentsException(ERROR, 'The chosen VNF was not instantiated by Multi-SFC!')
+
+            vnf_pkg_id = data[0]['vnf_pkg_id']
+            _, catalog = database.list_catalog(vnf_pkg_id=vnf_pkg_id)
+            vnf_pkg_dir = catalog[0]['dir_id']
+            vnf_pkg_cps = self.list_vnf_pkg_cps(vnf_pkg_dir)
+
+            # Leave just the CPs that are in the same subnet of the first VNF CP_in of the SFC
+            cps = vnf_pkg_cps.keys()
+            cps = list(cps)
+            for cp in cps:
+                if vnf_pkg_cps[cp]['network_name'] != sfp_first_vnf_cps[sfp_cps[0]]['network_name']:
+                    vnf_pkg_cps.pop(cp)
+
+            if cp_out is None:
+                # Selects the suitable CP_out automatically
+                if not vnf_pkg_cps:
+                    raise NFVOAgentsException(ERROR, 'No suitable CP on this VNF!')
+
+                if len(vnf_pkg_cps) == 1:
+                    cp_name = list(vnf_pkg_cps.keys())[0]
+
+                else:
+                    raise NFVOAgentOptions('Choose an CP!', vnf_pkg_cps)
+
+            else:
+                cp_name = cp_out
+
+                if cp_name not in vnf_pkg_cps:
+                    raise NFVOAgentsException(ERROR, 'Invalid CP!')
+
+            resource_id = self.get_vnf_nfvo_resource_id(vnf_id, cp_name)
+
+            criteria.append({'network_src_port_id': resource_id})
+
+        elif origin == EXTERNAL:
+            data = self.tacker_agent.get_fip_router_interface_id(
+                sfp_first_vnf_cps[sfp_cps[0]]['network_name'])
+
+            criteria.append({'network_src_port_id': data})
+
+        else:
+            raise NFVOAgentsException(ERROR, 'Network traffic source to SFP should be INTERNAL or EXTERNAL.')
+
+        return sfc_descriptor
+
+    def acl_criteria_parser(self, acl):
+        """Parses all ACL criteria according of Tacker NFVO requirements.
+
+        It parses from strings to ints all ACL criteria to match the NFVO requirements.
+
+        :param acl: a dict with the acl criteria
+        :return: OK and data if success, or ERROR and its reason if not
+        """
+
+        with open('tacker_nfv_defs.yaml', 'r') as defs_file:
+            acl_defs = defs_file.read()
+
+        acl_defs = yaml.full_load(acl_defs)
+        acl_types = acl_defs['data_types']['tosca.nfv.datatypes.aclType']['properties']
+
+        for item in acl:
+            k = list(item.keys())
+            k = k[0]
+            if k not in acl_types:
+                msg = 'Invalid ACL criteria "%s"!' % k
+                logger.info(msg)
+                raise NFVOAgentsException(ERROR, msg)
+
+            if 'constraints' in acl_types[k]:
+                item_range = acl_types[k]['constraints'][0]['in_range']
+                start, end = item_range
+                if int(item[k]) not in range(start, end+1):
+                    msg = "Invalid value for ACL criteria '%s'! Use a value between %s and %s." % (k, start, end)
+                    logger.info(msg)
+                    raise NFVOAgentsException(ERROR, msg)
+
+            if acl_types[k]['type'] == 'integer':
+                item[k] = int(item[k])
+
+        return acl
+
+    def configure_policies(self, sfc_descriptor, acl):
+
+        topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
+
+        criteria = topology_template['node_templates']['Forwarding_path1'] \
+            ['properties']['policy']['criteria']
+
+        acl = self.acl_criteria_parser(acl)
+
+        for rule in acl:
+            criteria.append(rule)
+
+        return sfc_descriptor
+
+    def set_next_vnffgd_path_id(self, vnffgd):
+        """Set up the next VNFFGD SFP id in the SFC being composed
+
+            Retrieves the largest number of the SFP ID in the vnffgd catalog from the NFVO and sets
+            the next one in the currently vnffgd being composed.
+
+        :return: OK and the last path id, or ERROR and its reason
+        """
+        result, data = self.vnffgd_list()
+
+        if result != OK:
+            return result, data
+
+        last_path_id = 0
+        for item in data:
+            path_id = item['template']['vnffgd']['topology_template'] \
+                ['node_templates']['Forwarding_path1']['properties']['id']
+            if path_id > last_path_id:
+                last_path_id = path_id
+
+        vnffgd['vnffgd']['template']['vnffgd']['topology_template'] \
+            ['node_templates']['Forwarding_path1']['properties']['id'] = last_path_id + 1
+
+        return OK, last_path_id
+
+    def sfc_rollback_actions(self, vnf_instance_ids, core, vnffgd_id=None):
+        """Executes the rollback actions whether an error occurs while instantiating a VNFFG"""
+
+        logger.info("Executing rollback actions...")
+        error_message = ''
+
+        if vnffgd_id:
+            logger.info("Destroying VNFFGD %s", vnffgd_id)
+            resp, data = self.vnffgd_delete(vnffgd_id)
+            if resp != OK:
+                return data
+
+        for vnf_id in vnf_instance_ids:
+            rollback_data = core.destroy_vnf(vnf_id)
+            if rollback_data['status'] != OK:
+                error_message = ' '.join([error_message, rollback_data['reason']])
+                logger.error(rollback_data['reason'])
+
+        logger.info('Rollback done!')
+
+        return error_message
+
+    def create_sfc(self, sfc_descriptor, database, core, sfc_uuid):
+        """Sends and instantiates all VNFDs and VNFFGDs to the NFVO communication agent
+
+        If an error occurs it also calls rollback actions
+
+        :param sfc_data: input parameters are:
+            - sfc_uuid: the unique identifier of the composed SFC to be started
+
+        :return: OK if all succeed, or ERROR and its reason
+        """
+        # TODO Corrigir os argumentos na documentação de todo o código
+        vnf_instance_list = []
+        vnf_mapping = {}
+
+        constituent_vnfs = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template'] \
+            ['groups']['VNFFG1']['properties']['constituent_vnfs']
+        # configuring VNFFGD unique name
+        sfc_descriptor['vnffgd']['name'] = unique_id()
+
+        # Instantiating all VNFDs in VNFFGD using processes
+        subprocess_pkgs = []
+        for vnfd_name in constituent_vnfs:
+            result, data = database.list_catalog(vnfd_name=vnfd_name)
+            if result != OK:
+                return {'status': result, 'reason': data}
+            # Second argument states that the called function is in a subprocess
+            subprocess_pkgs.append([data[0]['_id'], True])
+
+        processes = Pool(len(subprocess_pkgs))
+
+        proc_resp = processes.starmap(core.instantiate_vnf, subprocess_pkgs)
+        processes.close()
+        processes.terminate()
+        # debug
+        logger.info('Return data from processes: %s', proc_resp)
+
+        error = False
+        for i in range(len(proc_resp)):
+            vnf_data = proc_resp[i]
+            vnfd_name = constituent_vnfs[i]
+
+            if vnf_data['status'] == OK:
+                vnf_instance_list.append(vnf_data['vnf_id'])
+                vnf_mapping[vnfd_name] = vnf_data['vnf_id']
+            else:
+                logger.error("VNF could not be instantiated. Reason: %s", vnf_data['reason'])
+                error = True
+
+        # Rollback action if a given VNF fails on instantiating
+        if error:
+            self.sfc_rollback_actions(vnf_instance_list, core)
+            return {'status': ERROR, 'reason': 'Something went wrong on instantiating VNFs. See server logs.'}
+        # Processes to instantiate VNFs up to here!!!
+
+        # incrementing SFP path_id number in VNFFGD
+        # Consider put the set_next_vnffgd_path_id() in a CRITICAL REGION to avoid condition racing
+        result, data = self.set_next_vnffgd_path_id(sfc_descriptor)
+        if result != OK:
+            message = self.sfc_rollback_actions(vnf_instance_list, core)
+            data = ' '.join([data, message])
+            return {'status': result, 'reason': data}
+
+        # create VNFFGD in NFVO
+        resp, data = self.vnffgd_create(sfc_descriptor)
+        # Critical Region up to here
+
+        # show the ultimate created VNFFGD
+        logger.info('SFC Template UUID: %s\n%s', sfc_uuid,
+                    json.dumps(sfc_descriptor, indent=4, sort_keys=True))
+
+        if resp != OK:  # Rollback actions
+            message = self.sfc_rollback_actions(vnf_instance_list, core)
+            data = ' '.join([data, message])
+            logger.error(data)
+            return {'status': resp, 'reason': data}
+
+        vnffgd_id = data
+        logger.info("SFC descriptor created with id %s", vnffgd_id)
+
+        # instantiate VNFFG
+        resp, data = self.vnffg_create(vnffgd_id, vnf_mapping, unique_id())
+
+        if resp != OK:  # Rollback actions
+            message = self.sfc_rollback_actions(vnf_instance_list, core, vnffgd_id)
+            message = ' '.join([data, message])
+            return {'status': resp, 'reason': message}
+
+        vnffg_id = data
+        logger.info("SFC %s instantiated successfully!", vnffg_id)
+
+        resp, data = database.insert_sfc_instance(vnf_instance_list, vnffgd_id, vnffg_id)
+        if resp != OK:  # Rollback actions
+
+            vnffg_resp, vnffg_data = self.vnffg_delete(vnffg_id)
+            if vnffg_resp != OK:
+                return {'status': vnffg_resp, 'reason': ': '.join(['VNFFG', vnffg_data])}
+
+            message = self.sfc_rollback_actions(vnf_instance_list, core, vnffgd_id)
+            message = ' '.join([data, message])
+            return {'status': resp, 'reason': message}
+
+        return {'status': OK}
+
+    def destroy_sfc(self, sfc_id, core):
+        """Destroy the VNFFG and its VNFs
+
+        This function destroys the VNFFG and its VNFFGDs, and also all the VNFs and its VNFDs
+        that are specified in the VNFFG
+
+        :param sfc_id: the NFVO unique identifier of the VNFFG
+        :raises: NFVOAgentsException
+        """
+
+        state, data = self.vnffg_show(sfc_id)
+
+        if state != OK:
+            raise NFVOAgentsException(state, data)
+
+        vnffgd_id = data['vnffgd_id']
+        vnf_mapping = data['vnf_mapping']
+
+        vnffg_vnfs = []
+        for vnf_id in vnf_mapping.values():
+            vnffg_vnfs.append(vnf_id)
+
+        # destroying VNFFG
+        vnffg_status, data = self.vnffg_delete(sfc_id)
+        if vnffg_status != OK:
+            raise NFVOAgentsException(vnffg_status, data)
+
+        # TODO: How many time should we wait before remove the VNFFGD?
+        time.sleep(2)
+
+        # destroying VNFFGD
+        vnffgd_status, data = self.vnffgd_delete(vnffgd_id)
+        if state != OK:
+            raise NFVOAgentsException(vnffgd_status, data)
+
+        # destroying VNFs
+        message = ''
+        for vnf_id in vnffg_vnfs:
+            vnf_data = core.destroy_vnf(vnf_id)
+
+            if vnf_data['status'] != OK:
+                message = ' '.join([message, '\nVNF id %s: ' % vnf_id, vnf_data['reason']])
+
+        if message:
+            raise NFVOAgentsException(ERROR, message)
