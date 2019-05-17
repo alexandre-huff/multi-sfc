@@ -111,6 +111,8 @@ class Vnfd(object):
             return 'Deletion in progress'
         elif http_code == 204:
             return 'Deleted'
+        elif http_code == 409:
+            return json.loads(resp)['detail']
         else:
             msg = ""
             if resp:

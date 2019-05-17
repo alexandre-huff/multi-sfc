@@ -4,9 +4,10 @@
 import logging
 from time import sleep
 
+from exceptions import NFVOAgentsException
 from nfvo_agents import NFVOAgents
 from interface import implements
-from utils import OK, OSM_NFVO, ERROR, TIMEOUT
+from utils import OSM_NFVO, ERROR, TIMEOUT
 
 from osmclient.sol005 import client as osm
 from osmclient.common.exceptions import NotFound, ClientException
@@ -21,11 +22,8 @@ class OSMAgent(implements(NFVOAgents)):
     def __init__(self):
         self.client = osm.Client(host='osm-nfvo.local')
 
-    @staticmethod
-    def _get_vnf_nsd_template(self):
-        return {}
-
     def vnf_list(self):
+        """Retrieves a list of VNFs"""
 
         vnf_list = self.client.vnf.list()
 
@@ -45,9 +43,20 @@ class OSMAgent(implements(NFVOAgents)):
             vnfs.append({'vnf_id': vnf_id, 'vnf_name': vnf_name, 'instance_name': instance_name,
                          'mgmt_url': mgmt_url, 'vnfd_id': vnfd_id, 'vnf_status': vnf_status, 'platform': OSM_NFVO})
 
-        return OK, vnfs
+        return vnfs
 
     def ns_polling(self, ns_id):
+        """Constantly checks the creation status of the NS.
+
+        Wait until the NS status is set to ACTIVE on OSM.
+
+        :param ns_id:
+        :return: an NS instance
+
+        Raises
+        ------
+            NFVOAgentsException
+        """
         timeout = 300
         sleep_interval = 5
 
@@ -61,16 +70,27 @@ class OSMAgent(implements(NFVOAgents)):
                 ns_status = 'KEY_ERROR'
 
             if ns_status == 'ACTIVE':
-                return OK, ns
+                return ns
             elif ns_status not in ('BUILD', 'KEY_ERROR'):
-                return ns_status, 'Unexpected error.'
+                raise NFVOAgentsException(str(ns_status), 'Unexpected error.')
 
             sleep(sleep_interval)
             timeout -= sleep_interval
 
-        return TIMEOUT, 'TIMEOUT'
+        raise NFVOAgentsException(TIMEOUT, 'Timeout on polling NS id %s' % ns_id)
 
     def vnf_create(self, vnfp_dir, vnfd_name, vnf_name):
+        """Creates a VNF and its related NS.
+
+        :param vnfp_dir:
+        :param vnfd_name:
+        :param vnf_name:
+        :return: VNFD id, VNF id, and VNF ip
+
+        Raises
+        ------
+            NFVOAgentsException
+        """
 
         vnfd_path = '%s/vnfd.tar.gz' % vnfp_dir
         nsd_path = '%s/nsd.tar.gz' % vnfp_dir
@@ -88,7 +108,7 @@ class OSMAgent(implements(NFVOAgents)):
             nsd_id = self.client.nsd.create(nsd_path)
 
         except ClientException as e:
-            return {'status': ERROR, 'reason': e.args[0]}
+            raise NFVOAgentsException(ERROR, str(e))
 
         logger.info("NSD created with id %s", nsd_id)
 
@@ -96,29 +116,36 @@ class OSMAgent(implements(NFVOAgents)):
         ns_id = self.client.ns.create(nsd_id, vnf_name, 'VIM1', description=' ')
         logger.info("NS created with id %s", ns_id)
 
-        status, resp = self.ns_polling(ns_id)
-        if status != OK:
-            return {'status': status, 'reason': resp}
+        ns = self.ns_polling(ns_id)
 
-        vnf_id = resp['constituent-vnfr-ref'][0]
+        vnf_id = ns['constituent-vnfr-ref'][0]
         vnf = self.client.vnf.get(vnf_id)
 
         vnf_ip = vnf['ip-address']
 
         return {
-            'status': OK,
             'vnfd_id': vnfd_id,
             'vnf_id': vnf_id,
             'vnf_ip': vnf_ip
         }
 
     def vnf_delete(self, vnf_id):
+        """Remove a VNF and its related NS.
+
+        This operation just is done if the NS has only one VNF (i.e. this VNF)
+
+        :param vnf_id:
+
+        Raises
+        ------
+            NFVOAgentsException
+        """
 
         vnf = self.client.vnf.get(vnf_id)
         ns = self.client.ns.get(vnf['nsr-id-ref'])
 
         if len(ns['constituent-vnfr-ref']) > 1:
-            return {'status': ERROR, 'reason': 'A Network Service depends on this VNF'}
+            raise NFVOAgentsException(ERROR, "A Network Service depends on this VNF.")
 
         vnfd_id = vnf['vnfd-id']
         ns_id = ns['id']
@@ -137,11 +164,10 @@ class OSMAgent(implements(NFVOAgents)):
             logger.info("VNFD %s - %s", ns_id, resp)
 
         except ClientException as e:
-            return {'status': ERROR, 'reason': e.args[0]}
-
-        return {'status': OK}
+            raise NFVOAgentsException(ERROR, str(e))
 
     def sfc_list(self):
+        """Retrieves a list of NS"""
 
         ns_instances = self.client.ns.list()
 
@@ -163,7 +189,7 @@ class OSMAgent(implements(NFVOAgents)):
                 'platform': OSM_NFVO
             })
 
-        return OK, ns_list
+        return ns_list
 
     def get_policies(self):
         return {}

@@ -4,7 +4,9 @@
 from sys import exit
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
-from utils import OK, ERROR
+
+from exceptions import DatabaseException, MultiSFCException
+from utils import ERROR
 from bson import ObjectId
 import logging
 
@@ -42,6 +44,11 @@ class DatabaseConnection:
         self.db = self.client.Holistic
 
     def insert_vnf_package(self, category, vnfd_name, dir_id, vnf_type, platform, description):
+        """
+        Raises
+        ------
+            DatabaseException
+        """
         try:
             res = self.db.Catalog.insert_one({
                 'category': category,
@@ -51,28 +58,41 @@ class DatabaseConnection:
                 'platform': platform,
                 'description': description
                 })
+            if not res.inserted_id:
+                raise MultiSFCException('Failed on inserting this VNF Package in database.')
+
+        # used generic Exception to catch the MultiSFCException and any other unknown exceptions
         except Exception as e:
             logger.error(e)
-            return ERROR, e
-
-        return OK, res
+            raise DatabaseException(ERROR, str(e))
 
     def remove_vnf_package(self, vnf_pkg_id):
+        """
+        Raises
+        ------
+            DatabaseException
+        """
         try:
             data = self.db.Catalog.delete_one({
                         '_id': ObjectId(vnf_pkg_id)
                         })
-        except Exception as e:
-            return ERROR, e
 
-        if data.deleted_count == 1:
-            return OK
-        else:
-            return ERROR
+            if not data.deleted_count:
+                raise MultiSFCException('Failed on removing VNF Package %s from the database.' % vnf_pkg_id)
+
+        except Exception as e:
+            logger.error(e)
+            raise DatabaseException(ERROR, str(e))
 
     def list_catalog(self, vnf_pkg_id=None, category=None,
                      vnfd_name=None, dir_id=None, platform=None):
+        """
+        Retrieves a list of VNF Packages stored in database.
 
+        Raises
+        -----
+            DatabaseException
+        """
         criteria = {}
         if vnf_pkg_id:
             criteria['_id'] = ObjectId(vnf_pkg_id)
@@ -93,10 +113,10 @@ class DatabaseConnection:
                 if isinstance(vnf['_id'], ObjectId):
                     vnf['_id'] = str(vnf['_id'])
                 data.append(vnf)
-            return OK, data
+            return data
         except Exception as e:
             logger.error(e)
-            return ERROR, e
+            raise DatabaseException(ERROR, str(e))
 
     def insert_vnf_instance(self, vnf_pkg_id, vnfd_id, vnf_id):
         """Inserts data in VNF_Instances collection in MongoDB
@@ -104,7 +124,10 @@ class DatabaseConnection:
         :param vnf_pkg_id: local VNF Package ID
         :param vnfd_id: NFVO VNFD ID
         :param vnf_id: NFVO VNF ID
-        :return: OK if succeeded, or ERROR and the message if not
+
+        Raises
+        -----
+            DatabaseException
         """
         try:
             data = self.db.VNF_Instances.insert_one({
@@ -112,27 +135,32 @@ class DatabaseConnection:
                         'vnfd_id': vnfd_id,
                         'vnf_id': vnf_id
                         })
+            if not data.inserted_id:
+                raise MultiSFCException("VNF Instance not inserted in database!")
+
         except Exception as e:
             logger.error(e)
-            return ERROR, e
-
-        return OK, data.inserted_id
+            raise DatabaseException(ERROR, str(e))
 
     def remove_vnf_instance(self, vnf_instance_id):
         """Removes a VNF Instance from the database
 
         :param vnf_instance_id: the local identifier for the MongoDB (i.e., the _id str value)
-        :return: OK if succeeded, or ERROR and the message if not
+
+        Raises
+        -----
+            DatabaseException
         """
         try:
-            self.db.VNF_Instances.delete_one({
+            res = self.db.VNF_Instances.delete_one({
                         '_id': ObjectId(vnf_instance_id)
                         })
+            if not res.deleted_count:
+                raise MultiSFCException("VNF Instance not deleted from database!")
+
         except Exception as e:
             logger.error(e)
-            return ERROR, e
-
-        return OK
+            raise DatabaseException(ERROR, str(e))
 
     def list_vnf_instances(self, vnf_instance_id=None,
                            vnf_pkg_id=None, vnfd_id=None, vnf_id=None):
@@ -146,6 +174,10 @@ class DatabaseConnection:
         :param vnfd_id:
         :param vnf_id:
         :return: A list of VNF Instances stored in database
+
+        Raises
+        -----
+            DatabaseException
         """
         criteria = {}
         if vnf_instance_id:
@@ -165,74 +197,85 @@ class DatabaseConnection:
                 if isinstance(vnf['_id'], ObjectId):
                     vnf['_id'] = str(vnf['_id'])
                 data.append(vnf)
-            return OK, data
+            return data
+
         except Exception as e:
             logger.error(e)
-            return ERROR, e
+            raise DatabaseException(ERROR, str(e))
 
-    def insert_sfc_instance(self, vnf_instances, vnffgd_id, vnffg_id):
+    def insert_sfc_instance(self, vnf_instances, nsd_id, ns_id, platform):
         """Inserts data in SFC_Instances collection in MongoDB
 
         :param vnf_instances: a list or dict with all vnf_instance_id stored in MongoDB
-        :param vnffgd_id: NFVO VNFFGD ID
-        :param vnffg_id: NFVO VNFFG ID
-        :return: OK if succeeded, or ERROR and the message if not
+        :param nsd_id: NFVO VNFFGD or NSD ID
+        :param ns_id: NFVO VNFFG or NS ID
+
+        Raises
+        ------
+            DatabaseException
         """
         try:
             data = self.db.SFC_Instances.insert_one({
                         'vnf_instances': vnf_instances,
-                        'vnffgd_id': vnffgd_id,
-                        'vnffg_id': vnffg_id
+                        'nsd_id': nsd_id,
+                        'ns_id': ns_id,
+                        'platform': platform
                         })
+            if not data.inserted_id:
+                raise MultiSFCException("SFC Instance not inserted in database!")
+
         except Exception as e:
             logger.error(e)
-            return ERROR, e
-
-        return OK, data.inserted_id
+            raise DatabaseException(ERROR, str(e))
 
     def remove_sfc_instance(self, sfc_instance_id):
         """Removes a VNF Instance from the database
 
         :param sfc_instance_id: the local identifier for the MongoDB (i.e., the _id str value)
-        :return: OK if succeeded, or ERROR and the message if not
+
+        Raises
+        ------
+            DatabaseException
         """
         try:
             data = self.db.SFC_Instances.delete_one({
                         '_id': ObjectId(sfc_instance_id)
                         })
+            if not data.deleted_count:
+                raise MultiSFCException("SFC Instance not deleted from database!")
+
         except Exception as e:
             logger.error(e)
-            return ERROR, e
-
-        if data.deleted_count == 1:
-            return OK, data.deleted_count
-        else:
-            msg = 'SFC_Instance id %s not found!' % sfc_instance_id
-            logger.warning(msg)
-            return ERROR, msg
+            raise DatabaseException(ERROR, str(e))
 
     def list_sfc_instances(self, sfc_instance_id=None, vnf_instances=None,
-                           vnffgd_id=None, vnffg_id=None):
+                           nsd_id=None, ns_id=None, platform=None):
         """Returns a list of SFC Instances stored in MongoDB
 
         The function arguments are used to create the search criteria for the MongoDB.
         To get all SFC Instances stored in database just call this function without arguments.
 
-        :param sfc_instance_id:
+        :param sfc_instance_id: the unique identifier generated by mongodb
         :param vnf_instances: a list of VNF Instances
-        :param vnffgd_id:
-        :param vnffg_id:
+        :param nsd_id: an NSD id or a VNFFGD id (NFVO id)
+        :param ns_id: an NS id or a VNFFG id (NFVO id)
         :return: A list of SFC Instances stored in database
+
+        Raises
+        ------
+            DatabaseException
         """
         criteria = {}
         if sfc_instance_id:
             criteria['_id'] = ObjectId(sfc_instance_id)
         if vnf_instances:
             criteria['vnf_instances'] = vnf_instances
-        if vnffgd_id:
-            criteria['vnffgd_id'] = vnffgd_id
-        if vnffg_id:
-            criteria['vnffg_id'] = vnffg_id
+        if nsd_id:
+            criteria['nsd_id'] = nsd_id
+        if ns_id:
+            criteria['ns_id'] = ns_id
+        if platform:
+            criteria['platform'] = platform
 
         try:
             sfc_instances = self.db.SFC_Instances.find(criteria)
@@ -242,16 +285,17 @@ class DatabaseConnection:
                 if isinstance(sfc['_id'], ObjectId):
                     sfc['_id'] = str(sfc['_id'])
                 data.append(sfc)
-            return OK, data
+            return data
+
         except Exception as e:
             logger.error(e)
-            return ERROR, e
+            raise DatabaseException(ERROR, str(e))
 
 
 if __name__ == '__main__':
     import sys
 
-    # Used for clean VNF_Instances and SFC_Instances performance tests database data
+    # Used to clean VNF_Instances and SFC_Instances performance tests database data
     if len(sys.argv) == 2 and sys.argv[1] == 'clean':
         database = DatabaseConnection()
 

@@ -75,7 +75,7 @@ class ElementManagement:
 
         url = self.get_url(vnf_ip, 'write_file')
         payload = {'path': 'func.click', 'content': function}
-        return requests.post(url, data=payload)
+        return requests.post(url, data=payload, timeout=20)
 
     def stop_function(self, vnf_ip):
         """Stop VNF function."""
@@ -89,4 +89,4 @@ class ElementManagement:
 
         url = self.get_url(vnf_ip, 'start')
         payload = {'op': 'POST'}
-        return requests.post(url, data=payload, headers=self.header)
+        return requests.post(url, data=payload, headers=self.header, timeout=20)

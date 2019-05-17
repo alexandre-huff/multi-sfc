@@ -9,7 +9,7 @@ import base64
 import tarfile
 
 from click_manager import ElementManagement
-from exceptions import NFVOAgentsException, NFVOAgentOptions, MultiSFCException
+from exceptions import NFVOAgentsException, NFVOAgentOptions, MultiSFCException, DatabaseException
 from utils import *
 from flask import request
 from tacker_agent import TackerAgent
@@ -40,11 +40,11 @@ class Core:
 
         :param platform: the NFVO platform from VNF Package
         :return: an instance of NFVO Agent
+
+        Raises
+        ------
+            MultiSFCException
         """
-        # try:
-        #     nfvo = getattr(self, platform)
-        # except AttributeError:
-        #     raise AttributeError('VNF Package\'s %s platform not supported!', platform)
 
         if platform == TACKER_NFVO:
             return self.tacker_agent
@@ -52,7 +52,7 @@ class Core:
             return self.osm_agent
         else:
             msg = "VNF Package '%s' platform not supported!" % platform
-            logger.info(msg)
+            logger.error(msg)
             raise MultiSFCException(msg)
 
     def include_package(self, vnfp_data):
@@ -79,11 +79,10 @@ class Core:
         os.makedirs(dir_name)
 
         if platform == TACKER_NFVO:
-            vnfd_status, data = TackerAgent.vnfd_json_yaml_parser(vnfd)
-            if vnfd_status == OK:
-                vnfd = data
-            else:
-                return {'status': vnfd_status, 'reason': data}
+            try:
+                vnfd = TackerAgent.vnfd_json_yaml_parser(vnfd)
+            except NFVOAgentsException as e:
+                return {'status': e.status, 'reason': e.reason}
 
             vnfd_name = vnfd['vnfd']['name']
 
@@ -125,13 +124,12 @@ class Core:
             vnf_file.write(vnf_code)
             vnf_file.close()
 
-        # TODO: needs to add a function name
-        resp, data = database.insert_vnf_package(category, vnfd_name, dir_id, vnf_type, platform, vnf_description)
+        try:
+            database.insert_vnf_package(category, vnfd_name, dir_id, vnf_type, platform, vnf_description)
+        except DatabaseException as e:
+            return {'status': e.status, 'reason': e.reason}
 
-        if resp == OK:
-            return {'status': OK}
-        else:
-            return {'status': resp, 'reason': data}
+        return {'status': OK}
 
     def list_catalog(self):
         """
@@ -139,7 +137,7 @@ class Core:
 
         :return: a dict of vnfs
         """
-        _, vnfs = database.list_catalog()
+        vnfs = database.list_catalog()
 
         return {'vnfs': vnfs}
 
@@ -151,44 +149,45 @@ class Core:
         :return: a dict with status and error reason if it occurs
         """
 
-        _, data = database.list_vnf_instances(vnf_pkg_id=pkg_id)
+        data = database.list_vnf_instances(vnf_pkg_id=pkg_id)
         if len(data) > 0:
             return {'status': ERROR, 'reason': "A VNF Instance depends on this VNF Package!"}
 
-        resp, catalog = database.list_catalog(pkg_id)
-        pkg_dir_id = catalog[0]['dir_id']
+        try:
+            catalog = database.list_catalog(pkg_id)
 
-        if resp == OK:
-            result = database.remove_vnf_package(pkg_id)
+            if catalog:
+                pkg_dir_id = catalog[0]['dir_id']
 
-            if result == OK:
-                try:
-                    rmtree('repository/' + pkg_dir_id)
-                except OSError as e:
-                    logger.error("%s '%s'", e.strerror, e.filename)
-                    return {'status': ERROR, 'reason': e.strerror}
+                database.remove_vnf_package(pkg_id)
+                rmtree('repository/' + pkg_dir_id)
 
                 return {'status': OK}
+            else:
+                return {'status': ERROR, 'reason': status[404]}
 
-        return {'status': ERROR, 'reason': status[404]}
+        except DatabaseException as dbe:
+            return {'status': dbe.status, 'reason': dbe.reason}
+        except OSError as e:
+            logger.error("%s '%s'", e.strerror, e.filename)
+            return {'status': ERROR, 'reason': e.strerror}
 
     def list_vnfs(self):
         """List all instantiated VNFs in NFVO"""
 
-        resp, data = self.tacker_agent.vnf_list()
-        if resp != OK:
-            return {'status': resp, 'reason': data}
+        try:
+            data = self.tacker_agent.vnf_list()
+            osm_data = self.osm_agent.vnf_list()
 
-        resp, osm_data = self.osm_agent.vnf_list()
-        if resp != OK:
-            return {'status': resp, 'reason': data}
+        except NFVOAgentsException as e:
+            return {'status': e.status, 'reason': e.reason}
 
         data.extend(osm_data)
 
         return {'status': OK, 'vnfs': data}
 
     def instantiate_vnf(self, vnf_pkg_id, issubprocess=False):
-        """ Instantiates a given VNF and initialize its function in NFVO
+        """ Instantiates a given VNF and initializes its function in NFVO
 
         :param vnf_pkg_id:
         :param issubprocess: states that this function is running in a subprocess
@@ -203,9 +202,9 @@ class Core:
         if issubprocess:
             db = DatabaseConnection()
 
-        resp, catalog = db.list_catalog(vnf_pkg_id=vnf_pkg_id)
+        catalog = db.list_catalog(vnf_pkg_id=vnf_pkg_id)
 
-        if resp != OK:
+        if not catalog:
             return {'status': ERROR, 'reason': 'VNF Package not found!'}
 
         dir_id = catalog[0]['dir_id']
@@ -218,47 +217,53 @@ class Core:
 
         try:
             nfvo_agent = self._get_nfvo_agent_instance(platform)
+
+            response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, vnf_name)
+
+        except NFVOAgentsException as ex:
+            return {'status': ex.status, 'reason': ex.reason}
         except MultiSFCException as e:
             return {'status': ERROR, 'reason': str(e)}
 
-        response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, vnf_name)
-
-        if response['status'] != OK:
-            return {'status': response['status'], 'reason': response['reason']}
-
         logger.info('VNF %s is active with IP %s', response['vnf_id'], response['vnf_ip'])
 
-        db_res, data = db.insert_vnf_instance(vnf_pkg_id, response['vnfd_id'], response['vnf_id'])
+        try:
+            db.insert_vnf_instance(vnf_pkg_id, response['vnfd_id'], response['vnf_id'])
 
         # Rollback actions if database inserting fails
-        if db_res != OK:
-            error_message = 'Database error: %s' % data
+        except DatabaseException as dbe:
+            error_message = 'Database error: %s' % dbe.reason
 
             logger.error("Executing rollback actions...\n%s", error_message)
 
-            resp_delete = nfvo_agent.vnf_delete(response['vnf_id'])
-            if resp_delete == OK:
+            try:
+                nfvo_agent.vnf_delete(response['vnf_id'])
                 logger.info("Rollback done!")
-            else:
-                error_message.join([' ', resp_delete['reason']])
+
+            except NFVOAgentsException as e:
+                error_message = ' '.join([error_message, e.reason])
                 logger.error(error_message)
 
             return {'status': ERROR, 'reason': error_message}
 
+        # TODO Maybe configure VNF functions could be in another function (e.g. init_vnfs)
         if vnf_type == CLICK_VNF:
             function_path = 'repository/%s/vnf.click' % dir_id
             with open(function_path) as function_file:
                 function_data = function_file.read()
 
-            resp = self.click_init(response['vnf_id'], response['vnf_ip'], function_data)
-            if resp['status'] != OK:
-                return resp
+            try:
+                self.click_init(response['vnf_id'], response['vnf_ip'], function_data)
+
+            except MultiSFCException as e:
+                return {'status': ERROR, 'reason': str(e)}
 
             logger.info('VNF %s function initialized', response['vnf_id'])
 
         logger.info('VNF %s instantiated successfully', response['vnf_id'])
 
         # return instantiated vnf data
+        response['status'] = OK
         return response
 
     def destroy_vnf(self, vnf_id):
@@ -268,47 +273,47 @@ class Core:
         :return: OK if success, or ERROR and its reason if not
         """
 
-        _, vnf_instance = database.list_vnf_instances(vnf_id=vnf_id)
         try:
-            _, vnf_pkg = database.list_catalog(vnf_pkg_id=vnf_instance[0]['vnf_pkg_id'])
+            vnf_instance = database.list_vnf_instances(vnf_id=vnf_id)
+            vnf_pkg = database.list_catalog(vnf_pkg_id=vnf_instance[0]['vnf_pkg_id'])
+
+            platform = vnf_pkg[0]['platform']
+            nfvo_agent = self._get_nfvo_agent_instance(platform)
+
+            logger.info('Destroying VNF Instance %s', vnf_id)
+            nfvo_agent.vnf_delete(vnf_id)
+            logger.info('VNF Instance %s destroyed successfully', vnf_id)
+
+            database.remove_vnf_instance(vnf_instance[0]['_id'])
+
         except IndexError:
             return {'status': ERROR, 'reason': 'VNF not found in database!'}
-
-        platform = vnf_pkg[0]['platform']
-
-        try:
-            nfvo_agent = self._get_nfvo_agent_instance(platform)
+        except (DatabaseException, NFVOAgentsException) as e:
+            return {'status': e.status, 'reason': e.reason}
         except MultiSFCException as e:
             return {'status': ERROR, 'reason': str(e)}
-
-        logger.info('Destroying VNF Instance %s', vnf_id)
-
-        response = nfvo_agent.vnf_delete(vnf_id)
-
-        if response['status'] != OK:
-            return response
-
-        logger.info('VNF Instance %s destroyed successfully', vnf_id)
-
-        database.remove_vnf_instance(vnf_instance[0]['_id'])
 
         return {'status': OK}
 
     def click_init(self, vnf_id, vnf_ip, click_function):
         """Once Click VNF VM is running, initialize all tasks.
 
-        Wait at least 10 seconds until Click VNF is ready to initialize its tasks
+        Wait at least 15 seconds until Click VNF is ready to initialize its tasks
         The waiting timeout is up to 30 seconds before trying to write and start the function
         Each test is executed on port TCP 8000 using intervals of 2 seconds, in order to not break the Click HTTP Server
+
+        Raises
+        ------
+            MultiSFCException
         """
 
         logger.info('VNF %s Initializing click dependencies' % vnf_id)
 
         # Wait until all vnf-level dependencies are fully loaded
-        # TODO: What is the best way to determine this sleep time? It may change from one system to another.
-        # Use 10 seconds when click takes much time to initialize, because the Click-on-OSv HTTP Server
-        # breaks if a connection is done before the all dependencies are fully loaded.
-        time.sleep(10)
+        # TODO: What is the best way to determine this sleep time? It may change from one VIM to another.
+        # Use 15 seconds when click takes much time to initialize, because the Click-on-OSv HTTP Server
+        # breaks if a connection is done before all its dependencies are fully loaded.
+        time.sleep(15)
         # time.sleep(5)
 
         # timeout = time.time() + 30
@@ -332,7 +337,7 @@ class Core:
             if response.status_code != 200:
                 message = 'Unable to write click function. %s' % response.text
                 logger.error(message)
-                return {'status': ERROR, 'reason': message}
+                raise MultiSFCException(message)
 
             # start VNF function
             response = self.click_em.start_function(vnf_ip)
@@ -341,17 +346,12 @@ class Core:
             if response.status_code != 200:
                 message = 'Unable to start click function. %s' % response.text
                 logger.error(message)
-                return {'status': ERROR, 'reason': message}
+                raise MultiSFCException(message)
 
         except Exception as e:
-            message = 'VNF %s functions not initialized: %s' % (vnf_id, e)
+            message = 'VNF %s functions not initialized: %s' % (vnf_id, str(e))
             logger.error(message)
-            return {
-                'status': ERROR,
-                'reason': message
-            }
-
-        return {'status': OK}
+            raise MultiSFCException(message)
 
     def get_vnf_package(self, vnf_id):
         """Retrieves a VNF Package stored in Catalog from a given NFVO's VNF ID
@@ -360,16 +360,15 @@ class Core:
         :return:
         """
 
-        res, data = database.list_vnf_instances(vnf_id=vnf_id)
+        try:
+            data = database.list_vnf_instances(vnf_id=vnf_id)
+        except DatabaseException as e:
+            return {'status': e.status, 'reason': e.reason}
 
-        if res == OK:
-            if data:
-                return {'status': OK, 'package': data[0]}
-            else:
-                return {'status': ERROR, 'reason': 'VNF Package not found in Catalog!'}
-
-        # if happens a database error
-        return {'status': ERROR, 'reason': data}
+        if data:
+            return {'status': OK, 'package': data[0]}
+        else:
+            return {'status': ERROR, 'reason': 'VNF Package not found in Catalog!'}
 
     def get_policies(self, platform):
         """Retrieves the NFVO classifier ACL"""
@@ -385,8 +384,7 @@ class Core:
     def create_sfc_uuid(self):
         """Retrieves a unique identifier in order to compose a new SFC
 
-            Retrieves a uuid4 identifier to compose a new SFC and get a copy of the vnffg template.
-        :return: a unique identifier str.
+        :return: a unique identifier string
         """
 
         sfc_uuid = unique_id()
@@ -395,10 +393,9 @@ class Core:
         return {'sfc_uuid': sfc_uuid}
 
     def compose_sfp(self, sfp_data):
-        """Performs VNF Chaining in the VNFFG Template.
+        """Performs VNF Chaining in the SFC Template.
 
-        This function stands for VNF Chaining and its requirements for CPs and VLs using the VNFFG Template.
-        The first interface is reserved for the VNF management interface, and thus it is not used for VNF chaining.
+        This function stands for VNF Chaining and its requirements for CPs and VLs using the SFC Template.
         The following rules are taken into account:
         - cp_in: chooses the cp_in according to the same network of the prior cp_out. If the VNF is the first one, then
                  the first CP is chosen (disregarding the management interface)
@@ -426,26 +423,33 @@ class Core:
         cp_out = sfp_data.get('cp_out')
 
         vnf_pkg_id = sfp_data['vnf_pkg_id']
-        _, catalog = database.list_catalog(vnf_pkg_id)
-        vnfd_name = catalog[0]['vnfd_name']
-        vnf_pkg_dir = catalog[0]['dir_id']
-        platform = catalog[0]['platform']
 
         try:
+            catalog = database.list_catalog(vnf_pkg_id)
+
+            vnfd_name = catalog[0]['vnfd_name']
+            vnf_pkg_dir = catalog[0]['dir_id']
+            platform = catalog[0]['platform']
+
             nfvo_agent = self._get_nfvo_agent_instance(platform)
-        except MultiSFCException as e:
-            return {'status': ERROR, 'reason': str(e)}
 
-        if platform not in sfc_template:
-            sfc_template[platform] = deepcopy(nfvo_agent.get_sfc_template())
+            if platform not in sfc_template:
+                sfc_template[platform] = deepcopy(nfvo_agent.get_sfc_template())
 
-        try:
             sfc_template[platform] = nfvo_agent.compose_sfp(sfc_template[platform], vnfd_name, vnf_pkg_dir,
                                                             database, cp_out)
+
+        except IndexError:
+            return {'status': ERROR, 'reason': 'VNF Package %s not found!' % vnf_pkg_id}
+
         except NFVOAgentOptions as op:
             return {'status': op.status, 'reason': op.reason, 'cp_list': op.cp_list}
-        except NFVOAgentsException as e:
+
+        except (NFVOAgentsException, DatabaseException) as e:
             return {'status': e.status, 'reason': e.reason}
+
+        except MultiSFCException as e:
+            return {'status': ERROR, 'reason': str(e)}
 
         # debug
         logger.info('SFC Template UUID: %s\n%s', sfp_data['sfc_uuid'],
@@ -502,16 +506,17 @@ class Core:
         cp_out = policy_data.get('resource')
 
         try:
-            nfvo_agent.configure_traffic_src_policy(sfc_template[platform], origin, vnf_id, cp_out, database)
+            sfc_template[platform] = nfvo_agent.configure_traffic_src_policy(
+                                            sfc_template[platform], origin, vnf_id, cp_out, database)
 
         except NFVOAgentOptions as op:
             return {'status': op.status, 'cp_list': op.cp_list}
-        except NFVOAgentsException as e:
+        except (NFVOAgentsException, DatabaseException) as e:
             return {'status': e.status, 'reason': e.reason}
 
         # debug
         logger.info('SFC Template UUID: %s\n%s', policy_data['sfc_uuid'],
-                     json.dumps(sfc_template[platform], indent=4, sort_keys=True))
+                    json.dumps(sfc_template[platform], indent=4, sort_keys=True))
 
         self.cache.set(policy_data['sfc_uuid'], sfc_template)
 
@@ -562,7 +567,9 @@ class Core:
 
         If an error occurs it also calls rollback actions
 
-        :param sfc_data: input parameters are:
+        :param sfc_data:
+            input parameters are:
+
             - sfc_uuid: the unique identifier of the composed SFC to be started
 
         :return: OK if all succeed, or ERROR and its reason
@@ -581,12 +588,27 @@ class Core:
             try:
                 nfvo_agent = self._get_nfvo_agent_instance(platform)
 
+                sfc = nfvo_agent.create_sfc(sfc_template[platform], database, self, sfc_data['sfc_uuid'])
+
+            except (NFVOAgentsException, DatabaseException) as ex:
+                return {'status': ex.status, 'reason': ex.reason}
             except MultiSFCException as e:
                 return {'status': ERROR, 'reason': str(e)}
 
-            response = nfvo_agent.create_sfc(sfc_template[platform], database, self, sfc_data['sfc_uuid'])
-            if response['status'] != OK:
-                return response
+            # Rollback in case of error on inserting in database
+            try:
+                database.insert_sfc_instance(sfc['vnf_instances'], sfc['nsd_id'], sfc['ns_id'], platform)
+            # Rollback actions
+            except DatabaseException as dbe:
+                # this function raises an NFVOAgentsException and don't need to be caught,
+                # either way, the code after it won't run
+                # self.vnffg_delete(vnffg_id)
+                try:
+                    nfvo_agent.destroy_sfc(sfc['ns_id'])
+                except NFVOAgentsException as e:
+                    dbe.reason = ' '.join([dbe.reason, e.reason])
+
+                return {'status': dbe.status, 'reason': dbe.reason}
 
         self.cache.delete(sfc_data['sfc_uuid'])
 
@@ -600,30 +622,33 @@ class Core:
         """
 
         try:
-            # TODO Change this function call by the polymorphic version
-            # needs store and retrieve data from "domains and platforms" in database
-            self.tacker_agent.destroy_sfc(sfc_id, self)
+            sfc = database.list_sfc_instances(ns_id=sfc_id)
+            if not sfc:
+                raise MultiSFCException("SFC id %s cannot be destroyed. Not found in database.")
 
-        except NFVOAgentsException as e:
+            nfvo_agent = self._get_nfvo_agent_instance(sfc[0]['platform'])
+
+            nfvo_agent.destroy_sfc(sfc_id, self)
+
+            # remove SFC_Instance from database
+            _id = sfc[0]['_id']
+            database.remove_sfc_instance(_id)
+
+        except (NFVOAgentsException, DatabaseException) as e:
             return {'status': e.status, 'reason': e.reason}
-
-        # remove SFC_Instance from database
-        resp, sfc_instance = database.list_sfc_instances(vnffg_id=sfc_id)
-        if resp == OK:
-            if len(sfc_instance) > 0:
-                _id = sfc_instance[0]['_id']
-                database.remove_sfc_instance(_id)
+        except MultiSFCException as ex:
+            return {'status': ERROR, 'reason': str(ex)}
 
         return {'status': OK}
 
     def list_sfcs(self):
-        resp, data = self.tacker_agent.sfc_list()
-        if resp != OK:
-            return {'status': resp, 'reason': data}
+        """Retrieves all SFCs from Tacker and OSM"""
 
-        resp, osm_data = self.osm_agent.sfc_list()
-        if resp != OK:
-            return {'status': resp, 'reason': data}
+        try:
+            data = self.tacker_agent.sfc_list()
+            osm_data = self.osm_agent.sfc_list()
+        except NFVOAgentsException as e:
+            return {'status': e.status, 'reason': e.reason}
 
         data.extend(osm_data)
 
