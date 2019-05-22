@@ -1,0 +1,6 @@
+{
+    "category": "IP Tunnel",
+    "type": "general",
+    "platform": "osm",
+    "description": "VXLAN Tunnel Public Nonat net1"
+}
