@@ -1,6 +1,6 @@
 {
-    "category": "forwarder",
+    "category": "Forwarder",
     "type": "general",
     "platform": "tacker",
-    "description": "Cirros Forwarder 2"
+    "description": "Cirros Forwarder2 net0"
 }

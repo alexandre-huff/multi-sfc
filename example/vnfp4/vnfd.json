@@ -30,7 +30,7 @@
                 "image": "click-on-osv",
                 "availability_zone": "nova",
                 "mgmt_driver": "noop",
-                "name": "forwarder-4"
+                "name": "click-forwarder-4"
               }
             },
             "CP41": {
@@ -72,25 +72,6 @@
                 }
               ]
             },
-            "CP43": {
-              "type": "tosca.nodes.nfv.CP.Tacker",
-              "properties": {
-                "order": 2,
-                "anti_spoofing_protection": false
-              },
-              "requirements": [
-                {
-                  "virtualLink": {
-                    "node": "VL43"
-                  }
-                },
-                {
-                  "virtualBinding": {
-                    "node": "VDU1"
-                  }
-                }
-              ]
-            },
             "VL41": {
               "type": "tosca.nodes.nfv.VL",
               "properties": {
@@ -99,13 +80,6 @@
               }
             },
             "VL42": {
-              "type": "tosca.nodes.nfv.VL",
-              "properties": {
-                "vendor": "Tacker",
-                "network_name": "net0"
-              }
-            },
-            "VL43": {
               "type": "tosca.nodes.nfv.VL",
               "properties": {
                 "vendor": "Tacker",

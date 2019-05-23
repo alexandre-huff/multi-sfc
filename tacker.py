@@ -5,9 +5,10 @@ import os
 import requests
 import logging
 
-from keystoneauth1.identity import v3
-from keystoneauth1 import session
-from keystoneclient.v3 import client
+# Required imports for get_identity_info_keystone()
+# from keystoneauth1.identity import v3
+# from keystoneauth1 import session
+# from keystoneclient.v3 import client
 
 logger = logging.getLogger('tacker')
 
@@ -91,24 +92,26 @@ class IdentityManager:
         Authenticates using keystone client -- not using yet
         """
 
-        url = self.OPENSTACK_URL + 'identity/v3'
-        auth = v3.Password(auth_url=url,
-                           username=self.USERNAME,
-                           password=self.PASSWORD,
-                           project_name=self.TENANT_NAME,
-                           user_domain_name="default",
-                           project_domain_name="default")
-        sess = session.Session(auth=auth)
-        keystone = client.Client(session=sess)
+        pass
 
-        # testing code
-        # tacker_service = keystone.services.list(name='tacker')[0]
-        # ep = keystone.endpoints.list(service=tacker_service, interface='public')
-        # tacker_ep = ep[0].url
-        # vnfs = sess.get(''.join([tacker_ep, 'v1.0/vnfs']))
-        # users = keystone.users.list()
-
-        return keystone
+        # url = self.OPENSTACK_URL + 'identity/v3'
+        # auth = v3.Password(auth_url=url,
+        #                    username=self.USERNAME,
+        #                    password=self.PASSWORD,
+        #                    project_name=self.TENANT_NAME,
+        #                    user_domain_name="default",
+        #                    project_domain_name="default")
+        # sess = session.Session(auth=auth)
+        # keystone = client.Client(session=sess)
+        #
+        # # testing code
+        # # tacker_service = keystone.services.list(name='tacker')[0]
+        # # ep = keystone.endpoints.list(service=tacker_service, interface='public')
+        # # tacker_ep = ep[0].url
+        # # vnfs = sess.get(''.join([tacker_ep, 'v1.0/vnfs']))
+        # # users = keystone.users.list()
+        #
+        # return keystone
 
     def get_token(self):
         """

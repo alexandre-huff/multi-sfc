@@ -1,6 +1,6 @@
 {
-    "category": "forwarder",
+    "category": "Forwarder",
     "type": "click",
     "platform": "tacker",
-    "description": "Click forwarder net0-net1"
+    "description": "Click TCP Forwarder net0 net1"
 }

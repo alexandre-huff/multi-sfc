@@ -28,6 +28,8 @@ topology_template:
             sed -i -e 's/PasswordAuthentication/#PasswordAuthentication/' /etc/ssh/sshd_config
             systemctl restart ssh.service
             echo 'ubuntu:123456' | chpasswd
+            locale-gen pt_BR.UTF-8
+            timedatectl set-timezone America/Sao_Paulo
             cat <<EOF >> /etc/network/interfaces.d/50-cloud-init.cfg
                 post-up route del default dev \$IFACE
 
@@ -67,7 +69,7 @@ topology_template:
             -----END OpenVPN Static key V1-----
             EOF
             cat <<EOF >> /etc/openvpn/client.conf
-            remote 172.24.241.20
+            remote 172.24.241.3
             dev tun
             ifconfig 10.9.8.2 10.9.8.1
             secret /etc/openvpn/static.key

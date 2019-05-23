@@ -30,7 +30,7 @@
                 "image": "click-on-osv",
                 "availability_zone": "nova",
                 "mgmt_driver": "noop",
-                "name": "forwarder-1"
+                "name": "click-forwarder-1"
               }
             },
             "CP11": {

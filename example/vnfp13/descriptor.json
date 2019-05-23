@@ -1,6 +1,6 @@
 {
-    "category": "linux forwarder",
+    "category": "Forwarder",
     "type": "general",
     "platform": "tacker",
-    "description": "Ubuntu Forwarder 2"
+    "description": "Ubuntu Forwarder 2 net0"
 }

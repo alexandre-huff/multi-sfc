@@ -72,25 +72,6 @@
                 }
               ]
             },
-            "CP23": {
-              "type": "tosca.nodes.nfv.CP.Tacker",
-              "properties": {
-                "order": 2,
-                "anti_spoofing_protection": false
-              },
-              "requirements": [
-                {
-                  "virtualLink": {
-                    "node": "VL23"
-                  }
-                },
-                {
-                  "virtualBinding": {
-                    "node": "VDU1"
-                  }
-                }
-              ]
-            },
             "VL21": {
               "type": "tosca.nodes.nfv.VL",
               "properties": {
@@ -103,13 +84,6 @@
               "properties": {
                 "vendor": "Tacker",
                 "network_name": "net0"
-              }
-            },
-            "VL23": {
-              "type": "tosca.nodes.nfv.VL",
-              "properties": {
-                "vendor": "Tacker",
-                "network_name": "net1"
               }
             }
           }

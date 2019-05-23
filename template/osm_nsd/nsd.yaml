@@ -1,0 +1,70 @@
+nsd:nsd-catalog:
+  nsd:
+  - constituent-vnfd:
+    - member-vnf-index: 1
+      vnfd-id-ref: cirros-client_vnfd
+    - member-vnf-index: 2
+      vnfd-id-ref: cirros-forwarder1_vnfd
+    - member-vnf-index: 3
+      vnfd-id-ref: cirros-forwarder2_vnfd
+    description: Network Service Template
+    id: aec41598-6abd-43fd-a9b8-bd6df5aa235d
+    logo: osm_2x.png
+    name: osm-test
+    short-name: osm-test
+    vendor: OSM
+    version: '1.0'
+    vld:
+    - id: vld1
+      vim-network-name: net_mgmt
+      vnfd-connection-point-ref:
+      - member-vnf-index-ref: 1
+        vnfd-connection-point-ref: vnf-cp0
+        vnfd-id-ref: cirros-client_vnfd
+      - member-vnf-index-ref: 2
+        vnfd-connection-point-ref: eth0
+        vnfd-id-ref: cirros-forwarder1_vnfd
+      - member-vnf-index-ref: 3
+        vnfd-connection-point-ref: eth0
+        vnfd-id-ref: cirros-forwarder2_vnfd
+    - id: vld2
+      vim-network-name: net1
+      vnfd-connection-point-ref:
+      - member-vnf-index-ref: 1
+        vnfd-connection-point-ref: vnf-cp1
+        vnfd-id-ref: cirros-client_vnfd
+      - member-vnf-index-ref: 2
+        vnfd-connection-point-ref: eth1
+        vnfd-id-ref: cirros-forwarder1_vnfd
+      - member-vnf-index-ref: 3
+        vnfd-connection-point-ref: eth1
+        vnfd-id-ref: cirros-forwarder2_vnfd
+    vnffgd:
+    - classifier:
+      - id: class1
+        match-attributes:
+        - id: match1
+          ip-proto: '6'
+        member-vnf-index-ref: 1
+        name: class1-name
+        rsp-id-ref: rsp1
+        vnfd-connection-point-ref: vnf-cp1
+        vnfd-id-ref: cirros-client_vnfd
+      description: VNFFG1 Template
+      id: vnffg1
+      name: vnffg1
+      rsp:
+      - id: rsp1
+        name: rsp1-name
+        vnfd-connection-point-ref:
+        - member-vnf-index-ref: 2
+          order: 0
+          vnfd-connection-point-ref: eth1
+          vnfd-id-ref: cirros-forwarder1_vnfd
+        - member-vnf-index-ref: 3
+          order: 1
+          vnfd-connection-point-ref: eth1
+          vnfd-id-ref: cirros-forwarder2_vnfd
+      short-name: vnffg1-name
+      vendor: ufpr
+      version: '1.0'

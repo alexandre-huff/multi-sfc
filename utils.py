@@ -1,3 +1,6 @@
+''#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import uuid
 
 # Tacker REST API status codes
@@ -32,58 +35,55 @@ TACKER_NFVO = 'tacker'
 OSM_NFVO    = 'osm'
 
 
-# Click on OSv URL
-def create_url(vnf_ip, task):
-    return ''.join(['http://', vnf_ip, ':8000/click_plugin/', task])
-
 # Returns an unique ID
 def unique_id():
     # return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8))
     return str(uuid.uuid4())
 
+
 # used as a template to create a new VNFFG
-vnffgd_template = {
-    "vnffgd": {
-        "name": "vnffgd1",
-        "template": {
-            "vnffgd": {
-                "tosca_definitions_version": "tosca_simple_profile_for_nfv_1_0_0",
-                "description": "Sample VNFFG template",
-                "topology_template": {
-                    "node_templates": {
-                        "Forwarding_path1": {
-                            "type": "tosca.nodes.nfv.FP.Tacker",
-                            "description": "creates path (CP12->CP22)",
-                            "properties": {
-                                "policy": {
-                                    "type": "ACL",
-                                    "criteria": []
-                                },
-                                "path": [],
-                                "id": 0
-                            }
-                        }
-                    },
-                    "description": "Sample VNFFG template",
-                    "groups": {
-                        "VNFFG1": {
-                            "type": "tosca.groups.nfv.VNFFG",
-                            "description": "HTTP to Corporate Net",
-                            "members": [
-                                "Forwarding_path1"
-                            ],
-                            "properties": {
-                                "vendor": "tacker",
-                                "connection_point": [],
-                                "version": 1.0,
-                                "constituent_vnfs": [],
-                                "number_of_endpoints": 0,
-                                "dependent_virtual_link": []
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+# vnffgd_template = {
+#     "vnffgd": {
+#         "name": "vnffgd1",
+#         "template": {
+#             "vnffgd": {
+#                 "tosca_definitions_version": "tosca_simple_profile_for_nfv_1_0_0",
+#                 "description": "Sample VNFFG template",
+#                 "topology_template": {
+#                     "node_templates": {
+#                         "Forwarding_path1": {
+#                             "type": "tosca.nodes.nfv.FP.Tacker",
+#                             "description": "creates path (CP12->CP22)",
+#                             "properties": {
+#                                 "policy": {
+#                                     "type": "ACL",
+#                                     "criteria": []
+#                                 },
+#                                 "path": [],
+#                                 "id": 0
+#                             }
+#                         }
+#                     },
+#                     "description": "Sample VNFFG template",
+#                     "groups": {
+#                         "VNFFG1": {
+#                             "type": "tosca.groups.nfv.VNFFG",
+#                             "description": "HTTP to Corporate Net",
+#                             "members": [
+#                                 "Forwarding_path1"
+#                             ],
+#                             "properties": {
+#                                 "vendor": "tacker",
+#                                 "connection_point": [],
+#                                 "version": 1.0,
+#                                 "constituent_vnfs": [],
+#                                 "number_of_endpoints": 0,
+#                                 "dependent_virtual_link": []
+#                             }
+#                         }
+#                     }
+#                 }
+#             }
+#         }
+#     }
+# }

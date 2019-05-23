@@ -3,7 +3,7 @@ tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
 description: Cirros Forwarder Template
 
 metadata:
-  template_name: cirros-forwarder-vnfd
+  template_name: cirros-forwarder1-vnfd
 
 topology_template:
   node_templates:
@@ -13,7 +13,7 @@ topology_template:
         nfv_compute:
           properties:
             num_cpus: 1
-            mem_size: 256 MB
+            mem_size: 128 MB
             disk_size: 1 GB
       properties:
         image: cirros-0.3.5-x86_64-disk

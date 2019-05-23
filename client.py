@@ -4,6 +4,8 @@
 import json
 import os
 import requests
+import base64
+import yaml
 from prettytable import PrettyTable
 from utils import *
 
@@ -14,24 +16,30 @@ headers = {'Content-Type': 'application/json'}
 def validate_vnfp(path):
     vnfd_file = get_vnfd_file_name(path)
     if not vnfd_file:
-        return 0
+        return False
 
+    pkg_name = path
     path = ''.join([os.getcwd(), '/', path])
 
     if not os.path.exists(path)                  or \
         not os.path.isfile(vnfd_file)            or \
             not os.path.isfile(path + '/descriptor.json'):
-        return 0
+        return False
 
     with open(path + '/descriptor.json', 'r') as desc_file:
         descriptor = desc_file.read()
 
     descriptor = json.loads(descriptor)
+
+    if descriptor['platform'] == OSM_NFVO:
+        if not os.path.isfile(get_nsd_file_name(pkg_name)):
+            return False
+
     if descriptor['type'] == CLICK_VNF:
         if not os.path.isfile(path + '/vnf.click'):
-            return 0
+            return False
 
-    return 1
+    return True
 
 
 def get_vnfd_file_name(path):
@@ -40,29 +48,72 @@ def get_vnfd_file_name(path):
     json_file = path + '/vnfd.json'
     yaml_file = path + '/vnfd.yaml'
 
+    try:
+        files = os.listdir(path)
+    except FileNotFoundError:
+        return None
+
+    osm_vnfd = [f for f in files if 'vnf.tar.gz' in f]
+    if len(osm_vnfd) > 0:
+        osm_vnfd = path + '/' + osm_vnfd[0]
+    else:
+        osm_vnfd = ''
+
     if os.path.isfile(json_file):
         return json_file
     elif os.path.isfile(yaml_file):
         return yaml_file
+    elif os.path.isfile(osm_vnfd):
+        return osm_vnfd
     else:
         return None
+
+
+def get_nsd_file_name(path):
+    path = ''.join([os.getcwd(), '/', path])
+    files = os.listdir(path)
+    osm_nsd = [f for f in files if 'ns.tar.gz' in f]
+    if len(osm_nsd) > 0:
+        osm_nsd = path + '/' + osm_nsd[0]
+        return osm_nsd
+    else:
+        return ''
 
 
 def include_package():
     # TODO: also include a VNF Package with YAML descriptors (needs to parse YAML to JSON)
 
-    vnf_package_path = input("VNF Package path: ")
-    # vnf_package_path = "example/vnfp6"
+    url = base_url + '/package'
+
+    table = PrettyTable(["VNF Package", "Description", "Platform", "VNF Category"])
+
+    package_dir = 'example/'
+    dirs = os.listdir(package_dir)
+    # dirs.sort()
+
+    for dir in dirs:
+        with open(package_dir + '/' + dir + '/descriptor.json', 'r') as descriptor:
+            vnfp = json.loads(descriptor.read())
+            row = [dir, vnfp['description'], vnfp['platform'], vnfp['category']]
+            table.add_row(row)
+
+    table.sortby = "Description"
+    # print(table.get_string(sort_key=operator.itemgetter(1, 0), sortby="Grade"))
+    print(table)
+
+    vnf_package_path = input("VNF Package: ")
+    # vnf_package_path = "osm-vnfp2"
+    vnf_package_path = ''.join([package_dir, vnf_package_path])
 
     if not validate_vnfp(vnf_package_path):
         print("Invalid VNF Package!")
-        return 0
+        return
 
-    vnfd = open(get_vnfd_file_name(vnf_package_path), 'r').read()
     descriptor = open(vnf_package_path + '/descriptor.json', 'r').read()
+    platform = json.loads(descriptor)['platform']
+    vnfd_file = get_vnfd_file_name(vnf_package_path)
 
     vnf_package = {
-        'vnfd': vnfd,
         'descriptor': descriptor
     }
 
@@ -71,7 +122,24 @@ def include_package():
         vnf_function = open(vnf_package_path + '/vnf.click', 'r').read()
         vnf_package['vnf'] = vnf_function
 
-    url = base_url + '/package'
+    if platform == TACKER_NFVO:
+        vnfd = open(vnfd_file, 'r').read()
+        vnf_package['vnfd'] = vnfd
+
+    elif platform == OSM_NFVO:
+        vnfd = open(vnfd_file, 'rb').read()
+        vnfd_bytes = base64.b64encode(vnfd)
+        vnfd_str = vnfd_bytes.decode('utf-8')
+        vnf_package['vnfd'] = vnfd_str
+
+        nsd_file = get_nsd_file_name(vnf_package_path)
+        nsd = open(nsd_file, 'rb').read()
+        nsd_bytes = base64.b64encode(nsd)
+        nsd_str = nsd_bytes.decode('utf-8')
+        vnf_package['nsd'] = nsd_str
+
+    else:
+        return
 
     response = requests.post(url, data=json.dumps(vnf_package), headers=headers).json()
 
@@ -116,7 +184,6 @@ def list_catalog():
     if not catalog:
         print("\nNo VNF available!")
     else:
-        # Currently, the VNF Catalog column shows each VNF category stored in catalog
         table = PrettyTable(["SEQ", "VNF Category", "Description", "Platform"])
 
         index = 0
@@ -130,7 +197,7 @@ def list_catalog():
     return catalog
 
 
-def instantiate_vnf():
+def create_vnf():
     url = base_url + '/vnfs/'
 
     catalog = list_catalog()
@@ -195,12 +262,12 @@ def list_vnfs():
     vnfs = response['vnfs']
 
     if vnfs:
-        table = PrettyTable(["SEQ", "VNF Name", "Instance Name", "Mgmt Address", "Status"])
+        table = PrettyTable(["SEQ", "VNF Name", "Instance Name", "Mgmt Address", "Status", "Platform"])
 
         index = 0
         for vnf in vnfs:
             index += 1
-            row = [index, vnf['vnf_name'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status']]
+            row = [index, vnf['vnf_name'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform']]
             table.add_row(row)
 
         print(table)
@@ -262,120 +329,161 @@ def create_sfc_v2():
                 print(response['status'], response['reason'], sep=': ')
                 break
 
-    print("\nIncoming SFC Network Traffic?\n%s. Internal\n%s. External" % (INTERNAL, EXTERNAL))
-    while True:
-        origin = input("> ")
-        if origin in [INTERNAL, EXTERNAL]:
-            break
-        else:
-            print("Invalid Option!")
+    sfc_origin_data = {
+        'sfc_uuid': sfc_uuid
+    }
 
-    if origin == INTERNAL:
-        nfvo_vnfs = list_vnfs()
-        # print(nfvo_vnfs)
+    response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
+    platforms = response['platforms']
 
-        if not nfvo_vnfs:
-            return
+    for platform in platforms:
+        sfc_origin_data['platform'] = platform
 
-        print("\nChoose a VNF that generates the incoming SFC traffic, or 0 to exit")
-        vnf_origin = int(input("SEQ > "))
-
-        if vnf_origin <= 0:
-            return
-        try:
-            vnf_id = nfvo_vnfs[vnf_origin - 1]['vnf_id']
-        except IndexError:
-            print("Invalid SEQ number!")
-            return
-
-        sfc_origin_data = {
-            'origin': origin,
-            'vnf_id': vnf_id,
-            'sfc_uuid': sfc_uuid
-        }
-
+        print("\nIncoming SFC Network Traffic for '%s'?\n%s. Internal\n%s. External" % (platform, INTERNAL, EXTERNAL))
         while True:
+            origin = input("> ")
+            if origin in [INTERNAL, EXTERNAL]:
+                break
+            else:
+                print("Invalid Option!")
+
+        sfc_origin_data['origin'] = origin
+
+        if origin == INTERNAL:
+            nfvo_vnfs = requests.get('/'.join([sfc_origin_url, platform]), headers=headers).json()
+            # print(nfvo_vnfs)
+
+            if nfvo_vnfs['status'] != OK:
+                print(nfvo_vnfs['status'], nfvo_vnfs['reason'], sep=': ')
+                return
+
+            if not nfvo_vnfs.get('vnfs'):
+                print("No available VNF to generate SFC incoming traffic!")
+                return
+
+            fields = nfvo_vnfs.get('fields')
+            t_head = ['SEQ']
+            for field in fields:
+                t_head.append(list(field.values())[0])
+
+            table = PrettyTable(t_head)
+
+            index = 0
+            for vnf in nfvo_vnfs.get('vnfs'):
+                index += 1
+                row = [index]
+                for field in fields:
+                    k = list(field.keys())[0]
+                    row.append(vnf[k])
+                table.add_row(row)
+
+            print(table)
+
+            print("\nChoose a VNF that generates the incoming SFC traffic for '%s', or 0 to exit" % platform)
+            while True:
+                vnf_origin = int(input("SEQ > "))
+
+                if vnf_origin <= 0:
+                    return
+                try:
+                    src_id = nfvo_vnfs['vnfs'][vnf_origin - 1]['id']
+                except IndexError:
+                    print("Invalid SEQ number!")
+                    return
+
+                sfc_origin_data['src_id'] = src_id
+
+                while True:
+                    response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
+
+                    if response['status'] == OK:
+                        break
+
+                    elif response['status'] == OPTIONS:
+                        vnf_pkg_cps = response['cp_list']
+                        cps = sorted(vnf_pkg_cps)
+                        for cp in cps:
+                            print('%s: %s' % (cp, vnf_pkg_cps[cp]['network_name']))
+
+                        cp_output = input("Output CP > ")
+                        sfc_origin_data['resource'] = cp_output
+
+                    else:
+                        print(response['status'], response['reason'], sep=': ')
+                        break
+
+                if response['status'] == OK:
+                    break
+
+        else:  # if origin == EXTERNAL
             response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
 
-            if response['status'] == OK:
-                break
-
-            elif response['status'] == OPTIONS:
-                vnf_pkg_cps = response['cp_list']
-                cps = sorted(vnf_pkg_cps)
-                for cp in cps:
-                    print('%s: %s' % (cp, vnf_pkg_cps[cp]['network_name']))
-
-                cp_output = input("Output CP > ")
-                sfc_origin_data['resource'] = cp_output
-
-            else:
+            if response['status'] != OK:
                 print(response['status'], response['reason'], sep=': ')
                 return
 
-    else:  # if origin == EXTERNAL
-        sfc_origin_data = {
-            'origin': origin,
-            'sfc_uuid': sfc_uuid
+        # ACL List
+        response = requests.get(acl_url + '/%s' % platform, headers=headers).json()
+        try:
+            acl_list = response['acl']
+        except KeyError:
+            print(response['status'], response['reason'], sep=': ')
+            return
+
+        table = PrettyTable(['ID', 'Description'], sortby='ID')
+
+        for acl_id, desc in acl_list.items():
+            table.add_row([acl_id, desc])
+
+        print(table)
+
+        print("\nAdd the criteria by their respective ID (0 for done, or -1 to exit)")
+
+        acl = {}
+        while True:
+            acl_criteria = input('ID > ')
+
+            if acl_criteria == "0":
+                break
+
+            if acl_criteria == "-1":
+                return
+
+            if acl_criteria not in acl_list.keys():
+                print("Invalid Criteria!")
+                continue
+
+            acl_value = input('Value > ')
+
+            acl[acl_criteria] = acl_value
+
+        acl_data = {
+            'acl': acl,
+            'sfc_uuid': sfc_uuid,
+            'platform': platform
         }
-        response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
+
+        # send ACL criteria to SFC_Core
+        response = requests.post(acl_url, headers=headers, data=json.dumps(acl_data)).json()
 
         if response['status'] != OK:
             print(response['status'], response['reason'], sep=': ')
             return
 
-    # ACL List
-    response = requests.get(acl_url, headers=headers).json()
-    acl_list = response['acl']
-
-    table = PrettyTable(['ID', 'Description'], sortby='ID')
-
-    for acl_id, desc in acl_list.items():
-        table.add_row([acl_id, desc])
-
-    print(table)
-
-    print("\nAdd the criteria by their respective ID (0 for done, or -1 to exit)")
-
-    acl = []
-    while True:
-        acl_criteria = input('ID > ')
-
-        if acl_criteria == "0":
-            break
-
-        if acl_criteria == "-1":
-            return
-
-        if acl_criteria not in acl_list.keys():
-            print("Invalid Criteria!")
-            continue
-
-        acl_value = input('Value > ')
-
-        acl.append({
-            acl_criteria: acl_value
-        })
-
-    acl_data = {
-        'acl': acl,
-        'sfc_uuid': sfc_uuid
+    print("\nAdd a name for this SFC (optional)")
+    sfc_name = input("Name > ")
+    sfc_data = {
+        'sfc_uuid': sfc_uuid,
+        'sfc_name': sfc_name
     }
 
-    # send ACL criteria to SFC_Core
-    response = requests.post(acl_url, headers=headers, data=json.dumps(acl_data)).json()
-
+    # start SFCs
+    response = requests.post(sfc_url + '/start', data=json.dumps(sfc_data), headers=headers).json()
     if response['status'] != OK:
         print(response['status'], response['reason'], sep=': ')
         return
 
-    # start VNFFG
-    response = requests.post(sfc_url + '/start', data=json.dumps({'sfc_uuid': sfc_uuid}), headers=headers).json()
-    if response['status'] != OK:
-        print(response['status'], response['reason'], sep=': ')
-        return
-
-    print("VNFFG instantiated successfully!")
+    print("SFC instantiated successfully!")
 
 
 def list_sfcs():
@@ -386,21 +494,22 @@ def list_sfcs():
         print(response['status'], response['reason'], sep=': ')
         return
 
-    vnffgs = response['vnffgs']
-    if vnffgs:
-        table = PrettyTable(["SEQ", "VNFFG Name", "Status", "VNF Chain", "Description"])
+    sfcs = response['sfcs']
+    if sfcs:
+        table = PrettyTable(["SEQ", "SFC Name", "Status", "Platform", "Service Function Path", "Policy"])
 
         index = 0
-        for vnffg in vnffgs:
+        for sfc in sfcs:
             index += 1
-            row = [index, vnffg['name'], vnffg['status'], ' -> '.join(vnffg['vnf_chain']), vnffg['description']]
+            row = [index, sfc['name'], sfc['status'], sfc['platform'],
+                   ' -> '.join(sfc['vnf_chain']), yaml.safe_dump(sfc['policy'])]
             table.add_row(row)
 
         print(table)
     else:
-        print("\nNo VNFFG instantiated in NVFO!")
+        print("\nNo SFC instantiated in NVFO!")
 
-    return vnffgs
+    return sfcs
 
 
 def destroy_sfc():
@@ -449,7 +558,7 @@ while True:
     elif option == "3":
         list_catalog()
     elif option == "4":
-        instantiate_vnf()
+        create_vnf()
     elif option == "5":
         destroy_vnf()
     elif option == "6":

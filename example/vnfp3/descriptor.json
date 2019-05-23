@@ -1,6 +1,6 @@
 {
-    "category": "firewall",
+    "category": "Forwarder",
     "type": "click",
     "platform": "tacker",
-    "description": "Click on OSv firewall"
+    "description": "Click TCP Forwarder3 net1"
 }

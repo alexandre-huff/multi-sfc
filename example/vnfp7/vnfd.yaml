@@ -32,6 +32,8 @@ topology_template:
           iface ens4 inet dhcp
           EOF
           echo 'ubuntu:123456' | chpasswd
+          locale-gen pt_BR.UTF-8
+          timedatectl set-timezone America/Sao_Paulo
           systemctl restart networking.service
 
     CP71:

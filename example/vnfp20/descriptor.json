@@ -1,6 +1,6 @@
 {
-    "category": "http server",
+    "category": "Linux",
     "type": "general",
     "platform" : "tacker",
-    "description": "Cirros HTTP Server"
+    "description": "Cirros Server net0"
 }

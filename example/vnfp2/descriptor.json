@@ -1,6 +1,6 @@
 {
-    "category": "forwarder",
+    "category": "Forwarder",
     "type": "click",
     "platform": "tacker",
-    "description": "Click-on-OSv TCP Forwarder 2"
+    "description": "Click TCP Forwarder2 net0"
 }

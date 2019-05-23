@@ -30,7 +30,7 @@
                 "image": "click-on-osv",
                 "availability_zone": "nova",
                 "mgmt_driver": "noop",
-                "name": "forwarder-3"
+                "name": "click-forwarder-3"
               }
             },
             "CP31": {
@@ -83,7 +83,7 @@
               "type": "tosca.nodes.nfv.VL",
               "properties": {
                 "vendor": "Tacker",
-                "network_name": "net0"
+                "network_name": "net1"
               }
             }
           }

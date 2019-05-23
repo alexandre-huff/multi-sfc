@@ -1,0 +1,6 @@
+{
+    "category": "Linux",
+    "type": "general",
+    "platform" : "tacker",
+    "description": "Cirros Client net0"
+}
