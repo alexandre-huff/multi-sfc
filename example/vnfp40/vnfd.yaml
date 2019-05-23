@@ -19,12 +19,12 @@ topology_template:
         image: ubuntu-server
         availability_zone: nova
         mgmt_driver: noop
-        name: linux-ipsec-client
+        name: linux-ipsec
         key_name: huff_key
         user_data_format: RAW
         user_data: |
           #!/bin/sh
-          sed -i -e 's/\ localhost/\ localhost\ linux-ipsec-client/' /etc/hosts
+          sed -i -e 's/\ localhost/\ localhost\ linux-ipsec/' /etc/hosts
           sed -i -e 's/PasswordAuthentication/#PasswordAuthentication/' /etc/ssh/sshd_config
           systemctl restart ssh.service
           echo 'ubuntu:123456' | chpasswd

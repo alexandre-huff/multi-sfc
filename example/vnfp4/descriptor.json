@@ -1,6 +1,6 @@
 {
-    "category": "load balancer",
+    "category": "Forwarder",
     "type": "click",
     "platform": "tacker",
-    "description": "Click on OSv Load Balancer"
+    "description": "Click TCP Forwarder4 net1"
 }

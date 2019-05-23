@@ -1,9 +1,9 @@
 tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
 
-description: Click on OSv Template
+description: Cirros Client Template
 
 metadata:
-  template_name: click-forwarder-vnfd
+  template_name: cirros-client-vnfd
 
 topology_template:
   node_templates:
@@ -14,14 +14,29 @@ topology_template:
           properties:
             num_cpus: 1
             mem_size: 256 MB
-            disk_size: 10 GB
+            disk_size: 1 GB
       properties:
-        image: click-on-osv
+        image: cirros-0.3.5-x86_64-disk
         availability_zone: nova
         mgmt_driver: noop
-        name: forwarder-9
+        name: cirros-client
+        key_name: huff_key
+        user_data_format: RAW
+        user_data: |
+          #!/bin/sh
+          sed -i -e 's/\localhost/\localhost\ cirros-client/' /etc/hosts
+          cat <<EOF >> /etc/network/interfaces
+          	post-up route del default dev \$IFACE
 
-    CP91:
+          auto eth1
+          iface eth1 inet dhcp
+          	post-up echo 1 > /proc/sys/net/ipv4/ip_forward
+          	post-up route del -host 169.254.169.254 dev \$IFACE
+          EOF
+          route del default dev eth0
+          ifup eth1
+
+    CP231:
       type: tosca.nodes.nfv.CP.Tacker
       properties:
         management: true
@@ -29,30 +44,29 @@ topology_template:
         anti_spoofing_protection: false
       requirements:
         - virtualLink:
-            node: VL91
+            node: VL231
         - virtualBinding:
             node: VDU1
 
-    CP92:
+    CP232:
       type: tosca.nodes.nfv.CP.Tacker
       properties:
         order: 1
         anti_spoofing_protection: false
       requirements:
         - virtualLink:
-            node: VL92
+            node: VL232
         - virtualBinding:
             node: VDU1
 
-    VL91:
+    VL231:
       type: tosca.nodes.nfv.VL
       properties:
         network_name: net_mgmt
         vendor: Tacker
 
-    VL92:
+    VL232:
       type: tosca.nodes.nfv.VL
       properties:
         network_name: net0
         vendor: Tacker
-

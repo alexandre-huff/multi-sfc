@@ -1,5 +1,5 @@
 {
-    "category": "vpn client",
+    "category": "VPN Tunnel",
     "type": "general",
     "platform": "tacker",
     "description": "OpenVPN Client Floating net0"

@@ -1,6 +1,6 @@
 {
-    "category": "IP Tunnel",
-    "type": "general",
+    "category": "Forwarder",
+    "type": "click",
     "platform": "osm",
-    "description": "VXLAN Tunnel Public Nonat net1"
+    "description": "Click TCP Forwarder2 net1"
 }

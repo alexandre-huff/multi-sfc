@@ -83,7 +83,7 @@
               "type": "tosca.nodes.nfv.VL",
               "properties": {
                 "vendor": "Tacker",
-                "network_name": "net1"
+                "network_name": "net0"
               }
             }
           }

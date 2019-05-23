@@ -1,6 +1,6 @@
 {
-    "category": "http server",
+    "category": "Linux",
     "type": "general",
     "platform": "tacker",
-    "description": "Ubuntu HTTP Server"
+    "description": "Ubuntu Server Floating net0"
 }

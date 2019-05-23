@@ -67,7 +67,7 @@ topology_template:
     VL212:
       type: tosca.nodes.nfv.VL
       properties:
-        network_name: net1
+        network_name: net0
         vendor: Tacker
 
 #    FIP212:

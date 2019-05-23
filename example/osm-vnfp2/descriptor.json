@@ -1,6 +1,6 @@
 {
-    "category": "HTTP Server",
+    "category": "Linux",
     "type": "general",
     "platform": "osm",
-    "description": "Cirros HTTP Server net1"
+    "description": "Cirros Server net1"
 }

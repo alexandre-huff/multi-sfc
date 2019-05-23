@@ -1,6 +1,0 @@
-{
-    "category": "VXLAN Tunnel",
-    "type": "general",
-    "platform": "tacker",
-    "description": "Ubuntu VXLAN Server"
-}

@@ -1,6 +1,6 @@
 {
     "category": "VXLAN Tunnel",
     "type": "general",
-    "platform": "tacker",
+    "platform": "osm",
     "description": "Ubuntu VXLAN Public net1"
 }

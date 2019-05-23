@@ -2,5 +2,5 @@
     "category": "Linux",
     "type": "general",
     "platform" : "tacker",
-    "description": "Cirros Server net0"
+    "description": "Cirros Client net0"
 }

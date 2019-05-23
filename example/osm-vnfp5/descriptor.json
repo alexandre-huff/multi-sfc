@@ -2,5 +2,5 @@
     "category": "Forwarder",
     "type": "click",
     "platform": "osm",
-    "description": "Click Forwarder1"
+    "description": "Click TCP Forwarder1 net1"
 }
