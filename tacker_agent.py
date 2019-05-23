@@ -13,7 +13,7 @@ from interface import implements
 from utils import OK, ERROR, ACTIVE, TIMEOUT, TACKER_NFVO, INTERNAL, EXTERNAL, unique_id, status
 from tacker import IdentityManager, Tacker
 # The package fake_tacker should be used for performance testing or demo purposes. It takes out Tacker NFVO requests
-# Also see in the beginning of the "instantiate_vnf" function in "Core" class.
+# Also see in the beginning of the "create_vnf" function in "Core" class.
 # from fake_tacker import IdentityManager, Tacker
 
 
@@ -80,7 +80,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         return vnfd
 
-    def vnfd_create(self, vnfd):
+    def create_vnfd(self, vnfd):
         """Create a VNF descriptor and return its ID.
 
         :param vnfd: VNFD content
@@ -100,7 +100,7 @@ class TackerAgent(implements(NFVOAgents)):
         vnfd_id = response.json()['vnfd']['id']
         return vnfd_id
 
-    def vnfd_delete(self, vnfd_id):
+    def delete_vnfd(self, vnfd_id):
         """Deletes a VNF descriptor in NFVO
 
         :param vnfd_id: VNFD ID in the Tacker
@@ -123,7 +123,7 @@ class TackerAgent(implements(NFVOAgents)):
                 logger.warning(error_reason)
                 raise NFVOAgentsException(ERROR, error_reason)
 
-    def vnf_vm_create(self, vnfd_id, vnf_name):
+    def create_vnf_vm(self, vnfd_id, vnf_name):
         """Create a VNF VM and return its ID.
 
         Raises
@@ -179,7 +179,7 @@ class TackerAgent(implements(NFVOAgents)):
             error_reason = 'TIMEOUT'
             raise NFVOAgentsException(TIMEOUT, error_reason)
 
-    def vnf_create(self, vnfp_dir, vnfd_name, vnf_name):
+    def create_vnf(self, vnfp_dir, vnfd_name, vnf_name):
         """Create a VNF and initialize all tasks.
 
         :param vnfp_dir: directory path containing the VNF Package
@@ -213,7 +213,7 @@ class TackerAgent(implements(NFVOAgents)):
                 break
 
         if not vnfd_id:
-            data = self.vnfd_create(json.dumps(vnfd_data))
+            data = self.create_vnfd(json.dumps(vnfd_data))
 
             vnfd_id = data
             logger.info('VNF descriptor created with id %s', vnfd_id)
@@ -224,7 +224,7 @@ class TackerAgent(implements(NFVOAgents)):
         # Generating a unique VNF name to avoid Tacker Internal Server Error
         seq = 1
         vnf_name = ''.join([vnf_name, '-', str(seq)])
-        vnfs = self.vnf_list()
+        vnfs = self.list_vnfs()
         while True:
             vnf_list = [vnf for vnf in vnfs if vnf['vnf_name'] == vnf_name]
             if len(vnf_list) > 0:
@@ -235,12 +235,12 @@ class TackerAgent(implements(NFVOAgents)):
         # Unique VNF name until here
 
         try:
-            data = self.vnf_vm_create(vnfd_id, vnf_name)
+            data = self.create_vnf_vm(vnfd_id, vnf_name)
 
         # Rollback VNFD creation
         except NFVOAgentsException as e:
             try:
-                self.vnfd_delete(vnfd_id)
+                self.delete_vnfd(vnfd_id)
                 logger.info("VNF descriptor id %s removed.", vnfd_id)
 
             # in case of error on deleting VNFD
@@ -269,8 +269,8 @@ class TackerAgent(implements(NFVOAgents)):
             'vnf_ip' : vnf_ip
         }
 
-    def vnf_delete(self, vnf_id):
-        """Deletes a VNF and its VNFD
+    def destroy_vnf(self, vnf_id):
+        """Destroys a VNF and deletes its VNFD
 
         :param vnf_id: VNF ID in the Tacker
 
@@ -326,9 +326,9 @@ class TackerAgent(implements(NFVOAgents)):
 
             self.timeout -= SLEEP_TIME
 
-        self.vnfd_delete(vnfd_id)
+        self.delete_vnfd(vnfd_id)
 
-    def vnf_list(self):
+    def list_vnfs(self):
         """ List all Tacker VNFs
 
         :return: a list of dict containing all Tacker VNFs
@@ -369,7 +369,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         return vnfs
 
-    def vnf_show(self, vnf_id):
+    def show_vnf(self, vnf_id):
         """Get information about a given VNF from Tacker
 
         :param vnf_id: the ID from a given VNF in Tacker
@@ -399,7 +399,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         return vnf
 
-    def vnf_nfvo_resources(self, vnf_id):
+    def list_vnf_nfvo_resources(self, vnf_id):
         """List resources such as VDU and CP.
 
         Raises
@@ -416,7 +416,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         return resources
 
-    def vnffgd_create(self, vnffgd):
+    def create_vnffgd(self, vnffgd):
         """Create VNF Forwarding Graph Descriptor in Tacker.
 
         :return: Tacker's VNFFGD ID
@@ -434,7 +434,7 @@ class TackerAgent(implements(NFVOAgents)):
         vnffgd_id = response.json()['vnffgd']['id']
         return vnffgd_id
 
-    def vnffgd_list(self):
+    def list_vnffgds(self):
         """Retrieves the list of VNFFGDs from Tacker
 
         Raises
@@ -449,7 +449,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         return response.json()['vnffgds']
 
-    def vnffgd_delete(self, vnffgd_id):
+    def delete_vnffgd(self, vnffgd_id):
         """Delete a given VNFFGD in Tacker
 
         Raises
@@ -464,7 +464,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         logger.info("VNFFGD %s removed successfully!", vnffgd_id)
 
-    def vnffg_create(self, vnffgd_id, vnf_mapping, vnffg_name):
+    def create_vnffg(self, vnffgd_id, vnf_mapping, vnffg_name):
         """Create VNF Forwarding Graph.
 
         :return: Tacker's VNFFG ID
@@ -484,7 +484,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         return vnffg_id
 
-    def vnffg_show(self, vnffg_id):
+    def show_vnffg(self, vnffg_id):
         """Retrieves a given VNFFG in Tacker
 
         Raises
@@ -514,7 +514,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         return response.json()['vnffgs']
 
-    def vnffg_delete(self, vnffg_id):
+    def destroy_vnffg(self, vnffg_id):
         """Deletes a given VNFFG in Tacker
 
         Raises
@@ -529,7 +529,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         logger.info("VNFFG %s destroyed successfully!", vnffg_id)
 
-    def sfc_list(self):
+    def list_sfcs(self):
         """Retrieves the list of SFCs in Tacker
 
         :return: a list of VNFFGs with particular fields
@@ -888,7 +888,7 @@ class TackerAgent(implements(NFVOAgents)):
         ------
             NFVOAgentsException
         """
-        resources = self.vnf_nfvo_resources(vnf_id)
+        resources = self.list_vnf_nfvo_resources(vnf_id)
 
         for resource in resources:
             if resource['name'] == resource_name:
@@ -1056,7 +1056,7 @@ class TackerAgent(implements(NFVOAgents)):
         ------
             NFVOAgentsException
         """
-        data = self.vnffgd_list()
+        data = self.list_vnffgds()
 
         last_path_id = 0
         for item in data:
@@ -1085,7 +1085,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         if vnffgd_id:
             logger.info("Destroying VNFFGD %s", vnffgd_id)
-            self.vnffgd_delete(vnffgd_id)
+            self.delete_vnffgd(vnffgd_id)
 
         for vnf_id in vnf_instance_ids:
             rollback_data = core.destroy_vnf(vnf_id)
@@ -1122,7 +1122,7 @@ class TackerAgent(implements(NFVOAgents)):
         ------
             NFVOAgentsException, DatabaseException
         """
-        vnffgd_list = self.vnffgd_list()
+        vnffgd_list = self.list_vnffgds()
         vnffg_list = self.vnffg_list()
         vnffgds = [x for x in vnffgd_list if x['name'] == sfc_name]
         vnffgs = [x for x in vnffg_list if x['name'] == sfc_name]
@@ -1148,7 +1148,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         processes = Pool(len(subprocess_pkgs))
 
-        proc_resp = processes.starmap(core.instantiate_vnf, subprocess_pkgs)
+        proc_resp = processes.starmap(core.create_vnf, subprocess_pkgs)
         processes.close()
         processes.terminate()
         # debug
@@ -1182,7 +1182,7 @@ class TackerAgent(implements(NFVOAgents)):
                         self.dump_sfc_descriptor(sfc_descriptor))
 
             # create VNFFGD in NFVO
-            vnffgd_id = self.vnffgd_create(sfc_descriptor)
+            vnffgd_id = self.create_vnffgd(sfc_descriptor)
             # Critical Region up to here
 
         # Rollback actions
@@ -1195,7 +1195,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         # instantiate VNFFG
         try:
-            vnffg_id = self.vnffg_create(vnffgd_id, vnf_mapping, sfc_name)
+            vnffg_id = self.create_vnffg(vnffgd_id, vnf_mapping, sfc_name)
 
         # Rollback actions
         except NFVOAgentsException as e:
@@ -1215,7 +1215,7 @@ class TackerAgent(implements(NFVOAgents)):
         # except DatabaseException as dbe:
         #     # this function raises an NFVOAgentsException and don't need to be caught,
         #     # either way, the code after it won't run
-        #     self.vnffg_delete(vnffg_id)
+        #     self.destroy_vnffg(vnffg_id)
         #
         #     message = self.sfc_rollback_actions(vnf_instance_list, core, vnffgd_id)
         #     message = ' '.join([dbe.reason, message])
@@ -1238,7 +1238,7 @@ class TackerAgent(implements(NFVOAgents)):
             NFVOAgentsException
         """
 
-        data = self.vnffg_show(sfc_id)
+        data = self.show_vnffg(sfc_id)
 
         vnffgd_id = data['vnffgd_id']
         vnf_mapping = data['vnf_mapping']
@@ -1248,13 +1248,13 @@ class TackerAgent(implements(NFVOAgents)):
             vnffg_vnfs.append(vnf_id)
 
         # destroying VNFFG
-        self.vnffg_delete(sfc_id)
+        self.destroy_vnffg(sfc_id)
 
         # TODO: How many time should we wait before remove the VNFFGD?
         time.sleep(2)
 
         # destroying VNFFGD
-        self.vnffgd_delete(vnffgd_id)
+        self.delete_vnffgd(vnffgd_id)
 
         # destroying VNFs
         message = ''

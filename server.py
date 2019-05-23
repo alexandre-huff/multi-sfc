@@ -49,7 +49,7 @@ def list_vnfs():
 
 @app.route('/vnfs/<vnf_pkg_id>', methods=['POST'])
 def instantiate_vnf(vnf_pkg_id):
-    return jsonify(core.instantiate_vnf(vnf_pkg_id))
+    return jsonify(core.create_vnf(vnf_pkg_id))
 
 
 @app.route('/vnfs/<vnf_id>', methods=['DELETE'])

@@ -85,7 +85,7 @@ def include_package():
 
     url = base_url + '/package'
 
-    table = PrettyTable(["VNF Package", "Description", "VNF Category", "Platform"])
+    table = PrettyTable(["VNF Package", "Description", "Platform", "VNF Category"])
 
     package_dir = 'example/'
     dirs = os.listdir(package_dir)
@@ -94,7 +94,7 @@ def include_package():
     for dir in dirs:
         with open(package_dir + '/' + dir + '/descriptor.json', 'r') as descriptor:
             vnfp = json.loads(descriptor.read())
-            row = [dir, vnfp['description'], vnfp['category'], vnfp['platform']]
+            row = [dir, vnfp['description'], vnfp['platform'], vnfp['category']]
             table.add_row(row)
 
     table.sortby = "Description"
@@ -184,7 +184,6 @@ def list_catalog():
     if not catalog:
         print("\nNo VNF available!")
     else:
-        # Currently, the VNF Catalog column shows each VNF category stored in catalog
         table = PrettyTable(["SEQ", "VNF Category", "Description", "Platform"])
 
         index = 0
@@ -198,7 +197,7 @@ def list_catalog():
     return catalog
 
 
-def instantiate_vnf():
+def create_vnf():
     url = base_url + '/vnfs/'
 
     catalog = list_catalog()
@@ -559,7 +558,7 @@ while True:
     elif option == "3":
         list_catalog()
     elif option == "4":
-        instantiate_vnf()
+        create_vnf()
     elif option == "5":
         destroy_vnf()
     elif option == "6":

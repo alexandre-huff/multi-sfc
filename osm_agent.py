@@ -38,7 +38,7 @@ class OSMAgent(implements(NFVOAgents)):
 
         return nsd_yaml
 
-    def vnf_list(self):
+    def list_vnfs(self):
         """Retrieves a list of VNFs"""
 
         vnf_list = self.client.vnf.list()
@@ -97,7 +97,7 @@ class OSMAgent(implements(NFVOAgents)):
 
         raise NFVOAgentsException(TIMEOUT, 'Timeout of %ss on polling NS id %s' % (timeout_seconds, ns_id))
 
-    def vnf_create(self, vnfp_dir, vnfd_name, vnf_name):
+    def create_vnf(self, vnfp_dir, vnfd_name, vnf_name):
         """Creates a VNF and its related NS.
 
         :param vnfp_dir:
@@ -147,8 +147,8 @@ class OSMAgent(implements(NFVOAgents)):
             'vnf_ip': vnf_ip
         }
 
-    def vnf_delete(self, vnf_id):
-        """Remove a VNF and its related NS.
+    def destroy_vnf(self, vnf_id):
+        """Destroys a VNF and its related NS.
 
         This operation just is done if the NS has only one VNF (i.e. this VNF)
 
@@ -184,7 +184,7 @@ class OSMAgent(implements(NFVOAgents)):
         except ClientException as e:
             raise NFVOAgentsException(ERROR, str(e))
 
-    def sfc_list(self):
+    def list_sfcs(self):
         """Retrieves a list of NS"""
 
         ns_instances = self.client.ns.list()

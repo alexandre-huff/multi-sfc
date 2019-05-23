@@ -178,8 +178,8 @@ class Core:
         """List all instantiated VNFs in NFVO"""
 
         try:
-            data = self.tacker_agent.vnf_list()
-            osm_data = self.osm_agent.vnf_list()
+            data = self.tacker_agent.list_vnfs()
+            osm_data = self.osm_agent.list_vnfs()
 
         except NFVOAgentsException as e:
             return {'status': e.status, 'reason': e.reason}
@@ -188,7 +188,7 @@ class Core:
 
         return {'status': OK, 'vnfs': data}
 
-    def instantiate_vnf(self, vnf_pkg_id, issubprocess=False):
+    def create_vnf(self, vnf_pkg_id, issubprocess=False):
         """ Instantiates a given VNF and initializes its function in NFVO
 
         :param vnf_pkg_id:
@@ -220,7 +220,7 @@ class Core:
         try:
             nfvo_agent = self._get_nfvo_agent_instance(platform)
 
-            response = nfvo_agent.vnf_create(vnfp_dir, vnfd_name, vnf_name)
+            response = nfvo_agent.create_vnf(vnfp_dir, vnfd_name, vnf_name)
 
         except NFVOAgentsException as ex:
             return {'status': ex.status, 'reason': ex.reason}
@@ -239,7 +239,7 @@ class Core:
             logger.error("Executing rollback actions...\n%s", error_message)
 
             try:
-                nfvo_agent.vnf_delete(response['vnf_id'])
+                nfvo_agent.destroy_vnf(response['vnf_id'])
                 logger.info("Rollback done!")
 
             except NFVOAgentsException as e:
@@ -255,7 +255,7 @@ class Core:
                 function_data = function_file.read()
 
             try:
-                self.click_init(response['vnf_id'], response['vnf_ip'], function_data)
+                self.init_click(response['vnf_id'], response['vnf_ip'], function_data)
 
             except MultiSFCException as e:
                 return {'status': ERROR, 'reason': str(e)}
@@ -283,7 +283,7 @@ class Core:
             nfvo_agent = self._get_nfvo_agent_instance(platform)
 
             logger.info('Destroying VNF Instance %s', vnf_id)
-            nfvo_agent.vnf_delete(vnf_id)
+            nfvo_agent.destroy_vnf(vnf_id)
             logger.info('VNF Instance %s destroyed successfully', vnf_id)
 
             database.remove_vnf_instance(vnf_instance[0]['_id'])
@@ -297,7 +297,7 @@ class Core:
 
         return {'status': OK}
 
-    def click_init(self, vnf_id, vnf_ip, click_function):
+    def init_click(self, vnf_id, vnf_ip, click_function):
         """Once Click VNF VM is running, initialize all tasks.
 
         Wait at least 15 seconds until Click VNF is ready to initialize its tasks
@@ -329,7 +329,7 @@ class Core:
         #         time.sleep(sleep_interval)
         #
         #     except Exception as e:
-        #         logger.error('Something went wrong in click_init function: %s' % e)
+        #         logger.error('Something went wrong in init_click function: %s' % e)
 
         try:
             # send function to VNF VM
@@ -621,7 +621,7 @@ class Core:
             except DatabaseException as dbe:
                 # this function raises an NFVOAgentsException and don't need to be caught,
                 # either way, the code after it won't run
-                # self.vnffg_delete(vnffg_id)
+                # self.destroy_vnffg(vnffg_id)
                 try:
                     nfvo_agent.destroy_sfc(sfc['ns_id'])
                 except NFVOAgentsException as e:
@@ -666,8 +666,8 @@ class Core:
         """Retrieves all SFCs from Tacker and OSM"""
 
         try:
-            data = self.tacker_agent.sfc_list()
-            osm_data = self.osm_agent.sfc_list()
+            data = self.tacker_agent.list_sfcs()
+            osm_data = self.osm_agent.list_sfcs()
         except NFVOAgentsException as e:
             return {'status': e.status, 'reason': e.reason}
 
