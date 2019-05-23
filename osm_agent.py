@@ -41,7 +41,10 @@ class OSMAgent(implements(NFVOAgents)):
     def list_vnfs(self):
         """Retrieves a list of VNFs"""
 
-        vnf_list = self.client.vnf.list()
+        try:
+            vnf_list = self.client.vnf.list()
+        except ClientException as e:
+            raise NFVOAgentsException(ERROR, str(e))
 
         vnfs = []
         for vnf in vnf_list:
@@ -72,6 +75,10 @@ class OSMAgent(implements(NFVOAgents)):
         Raises
         ------
             NFVOAgentsException
+
+        ReRaises
+        ------
+            ClientException
         """
         timeout_seconds = 300
         sleep_interval = 5
@@ -119,25 +126,28 @@ class OSMAgent(implements(NFVOAgents)):
             logger.info("VNFD previously created with id %s", vnfd_id)
 
         except NotFound:
-            vnfd_id = self.client.vnfd.create(vnfd_path)
-            logger.info("VNFD created with id %s", vnfd_id)
+            try:
+                vnfd_id = self.client.vnfd.create(vnfd_path)
+                logger.info("VNFD created with id %s", vnfd_id)
+            except ClientException as e:
+                raise NFVOAgentsException(ERROR, str(e))
 
         try:
             nsd_id = self.client.nsd.create(nsd_path)
 
+            logger.info("NSD created with id %s", nsd_id)
+
+            # TODO Change static argument VIM1
+            ns_id = self.client.ns.create(nsd_id, vnf_name, 'VIM1', description=' ')
+            logger.info("NS created with id %s", ns_id)
+
+            ns = self.ns_polling(ns_id)
+
+            vnf_id = ns['constituent-vnfr-ref'][0]
+            vnf = self.client.vnf.get(vnf_id)
+
         except ClientException as e:
             raise NFVOAgentsException(ERROR, str(e))
-
-        logger.info("NSD created with id %s", nsd_id)
-
-        # TODO Change static argument VIM1
-        ns_id = self.client.ns.create(nsd_id, vnf_name, 'VIM1', description=' ')
-        logger.info("NS created with id %s", ns_id)
-
-        ns = self.ns_polling(ns_id)
-
-        vnf_id = ns['constituent-vnfr-ref'][0]
-        vnf = self.client.vnf.get(vnf_id)
 
         vnf_ip = vnf['ip-address']
 
@@ -159,17 +169,17 @@ class OSMAgent(implements(NFVOAgents)):
             NFVOAgentsException
         """
 
-        vnf = self.client.vnf.get(vnf_id)
-        ns = self.client.ns.get(vnf['nsr-id-ref'])
-
-        if len(ns['constituent-vnfr-ref']) > 1:
-            raise NFVOAgentsException(ERROR, "A Network Service depends on this VNF.")
-
-        vnfd_id = vnf['vnfd-id']
-        ns_id = ns['id']
-        nsd_id = ns['nsd']['_id']
-
         try:
+            vnf = self.client.vnf.get(vnf_id)
+            ns = self.client.ns.get(vnf['nsr-id-ref'])
+
+            if len(ns['constituent-vnfr-ref']) > 1:
+                raise NFVOAgentsException(ERROR, "A Network Service depends on this VNF.")
+
+            vnfd_id = vnf['vnfd-id']
+            ns_id = ns['id']
+            nsd_id = ns['nsd']['_id']
+
             resp = self.client.ns.delete(ns_id)
             logger.info("NS Instance %s - %s", ns_id, resp)
 
@@ -186,8 +196,11 @@ class OSMAgent(implements(NFVOAgents)):
 
     def list_sfcs(self):
         """Retrieves a list of NS"""
+        try:
+            ns_instances = self.client.ns.list()
 
-        ns_instances = self.client.ns.list()
+        except ClientException as e:
+            raise NFVOAgentsException(ERROR, str(e))
 
         ns_list = []
         for ns in ns_instances:
@@ -572,7 +585,7 @@ class OSMAgent(implements(NFVOAgents)):
                 break
 
         if not vnf_cp_ref:
-            NFVOAgentsException(ERROR, "No suitable CP on this VNF!")
+            raise NFVOAgentsException(ERROR, "No suitable CP on this VNF!")
 
         classifier['member-vnf-index-ref'] = member_vnf_index
         classifier['vnfd-id-ref'] = vnf_id_ref
@@ -653,8 +666,11 @@ class OSMAgent(implements(NFVOAgents)):
                 logger.info("VNFD previously created with id %s", vnfd_id)
 
             except NotFound:
-                vnfd_id = self.client.vnfd.create(vnfd_path)
-                logger.info("VNFD created with id %s", vnfd_id)
+                try:
+                    vnfd_id = self.client.vnfd.create(vnfd_path)
+                    logger.info("VNFD created with id %s", vnfd_id)
+                except ClientException as e:
+                    raise NFVOAgentsException(ERROR, str(e))
 
         tar = tarfile.open(nsd_file, 'w:gz')
         tar.add(vnfp_template_dir, arcname='template_nsd', recursive=True)
