@@ -1,6 +1,6 @@
 # Multi-SFC
 
-Multi-SFC is a framework for composing and managing the lifecycle of multiple SFC segments distributed on diferent clouds/domains/NFVOs. This framework was specified according to the ETSI NFV-MANO architecture and aims to simplify the composition and lifecycle management of SFCs with multiple segments on multiple NFV platforms. SFC compositions also can be done concurrently. Currently, the Muti-SFC framework works with Tacker and OSM NFV orchestrators, both using OpenStack as its VIM.
+Multi-SFC is a framework for composing and managing the lifecycle of multiple SFC segments distributed on different clouds/domains/NFVOs. This framework was specified according to the ETSI NFV-MANO architecture and aims to simplify the composition and lifecycle management of SFCs with multiple segments on multiple NFV platforms. SFC compositions also can be done concurrently. Currently, the Muti-SFC framework works with Tacker and OSM NFV orchestrators, both using OpenStack as its VIM.
 
 ## Prerequisites
 
