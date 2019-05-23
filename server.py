@@ -4,6 +4,7 @@ import logging
 from flask import Flask
 from flask import request, jsonify
 from core import Core
+from utils import TACKER_NFVO, OSM_NFVO, OK, ERROR
 
 # LOGGING
 # basicConfig sets up all the logs from libraries
@@ -80,6 +81,70 @@ def get_sfc_uuid():
 @app.route('/sfc/sfp/compose', methods=['POST'])
 def compose_sfp():
     return jsonify(core.compose_sfp(request.json))
+
+
+@app.route('/sfc/acl/origin/<platform>', methods=['GET'])
+def get_sfc_traffic_origin(platform):
+    if platform == TACKER_NFVO:
+        # fields defines which information should be shown in client applications
+        fields = [
+            {'id': 'ID'},
+            {'name': 'Name'},
+            {'instance': 'Instance Name'},
+            {'address': 'Mgmt Address'},
+            {'status': 'Status'},
+            {'platform': 'Platform'}
+        ]
+
+        vnfs = core.list_vnfs()
+
+        src_vnfs = []
+        for vnf in vnfs['vnfs']:
+            if vnf.get('platform') == TACKER_NFVO:
+                src_vnf = {
+                    'id': vnf.get('vnf_id'),
+                    'name': vnf.get('vnf_name'),
+                    'instance': vnf.get('instance_name'),
+                    'address': vnf.get('mgmt_url'),
+                    'status': vnf.get('vnf_status'),
+                    'platform': TACKER_NFVO
+                }
+                src_vnfs.append(src_vnf)
+        return jsonify({
+            'status': OK,
+            'fields': fields,
+            'vnfs': src_vnfs
+        })
+
+    elif platform == OSM_NFVO:
+        fields = [
+            {'category': 'VNF Category'},
+            {'description': 'Description'},
+            {'platform': 'Platform'}
+            # {'id': 'ID'}
+        ]
+
+        vnfps = core.list_catalog()
+
+        src_vnfps = []
+        for vnfp in vnfps['vnfs']:
+            if vnfp.get('platform') == OSM_NFVO:
+                src_vnfp = {
+                    'id': vnfp.get('_id'),
+                    'category': vnfp.get('category'),
+                    'description': vnfp.get('description'),
+                    'platform': OSM_NFVO
+                }
+                src_vnfps.append(src_vnfp)
+
+        return jsonify({
+            'status': OK,
+            'fields': fields,
+            'vnfs': src_vnfps
+        })
+
+    else:
+        return jsonify({'status': ERROR, 'reason': 'Platform %s not supported' % platform})
 
 
 @app.route('/sfc/acl/origin', methods=['POST'])

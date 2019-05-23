@@ -115,6 +115,8 @@ class Core:
             vnfd_yaml = yaml.full_load(tar_vnfd)
             vnfd_name = vnfd_yaml['vnfd:vnfd-catalog']['vnfd'][0]['name']
 
+            tar.close()
+
         else:
             return {'status': ERROR, 'reason': 'VNF Package unknown platform: %s' % platform}
 
@@ -397,8 +399,8 @@ class Core:
 
         This function stands for VNF Chaining and its requirements for CPs and VLs using the SFC Template.
         The following rules are taken into account:
-        - cp_in: chooses the cp_in according to the same network of the prior cp_out. If the VNF is the first one, then
-                 the first CP is chosen (disregarding the management interface)
+        - cp_in: chooses the cp_in according to the same network of the previous cp_out.
+                 If the VNF is the first one, then the first CP is chosen (disregarding the management interface)
         - cp_out: if the given VNF has just one CP for VNF chaining, then cp_out = cp_in. Otherwise,
                   cp_out is chosen taking into account NFVO requirements implemented in the related agents.
                   If cp_out can not be selected automatically, a message with OPTIONS status is returned
@@ -452,8 +454,8 @@ class Core:
             return {'status': ERROR, 'reason': str(e)}
 
         # debug
-        logger.info('SFC Template UUID: %s\n%s', sfp_data['sfc_uuid'],
-                    json.dumps(sfc_template[platform], indent=4, sort_keys=True))
+        logger.debug('SFC Template UUID: %s\n%s', sfp_data['sfc_uuid'],
+                    nfvo_agent.dump_sfc_descriptor(sfc_template[platform]))
 
         self.cache.set(sfp_data['sfc_uuid'], sfc_template)
 
@@ -464,20 +466,17 @@ class Core:
 
         INTERNAL traffic is sourced from VNFs managed by NFVO, while EXTERNAL traffic is sourced from everything
         out from NFVO networks.
-        This function also includes specific requirements to select the source port for any NFVO.
-        Currently, it just supports Tacker NFVO.
-        Tacker has the requirement for 'network_source_port_id' in ACL criteria, which is included  in VNFFGD
-        by this function.
+
         One important rule is applied:
-            1. Tacker's network_name from the origin VNF CP must be the same as the input CP of the first VNF in the chain.
+            1. NFVO's network_name from the origin VNF CP must be the same as the input CP of the first VNF in the chain.
                If there are more CPs than 1, then a message with status OPTIONS and a cp_list is replied to the
                user to inform a desirable connection point.
 
         :param policy_data: input arguments are:
             - sfc_uuid: the unique identifier to the SFC being composed
             - origin: if the SFC traffic source is INTERNAL or EXTERNAL
-            - vnf_id: the VNF unique identifier from the NFVO when using INTERNAL traffic origin
-            - resource: optional when using INTERNAL origin. Identifies the manual user input of the cp_out
+            - src_id: the VNF or VNF Package unique identifier from the NFVO when using INTERNAL traffic origin
+            - resource: optional when using INTERNAL origin. Identifies the manual user input of the source cp_out
 
         :return: OK if success, or ERROR and its reason if not, or OPTIONS and a cp_list dict
         """
@@ -494,29 +493,43 @@ class Core:
             return {'status': OPTIONS, 'platforms': [*sfc_template]}
 
         platform = policy_data['platform']
+
         try:
             nfvo_agent = self._get_nfvo_agent_instance(platform)
         except MultiSFCException as e:
             return {'status': ERROR, 'reason': str(e)}
 
         origin = policy_data['origin']
-        vnf_id = policy_data.get('vnf_id')
+        src_id = policy_data.get('src_id')
 
         # resource means the CP_out
         cp_out = policy_data.get('resource')
 
         try:
-            sfc_template[platform] = nfvo_agent.configure_traffic_src_policy(
-                                            sfc_template[platform], origin, vnf_id, cp_out, database)
+            if platform == TACKER_NFVO:
+                vnf = database.list_vnf_instances(vnf_id=src_id)
+                if not vnf:
+                    raise MultiSFCException("VNF Instance not found in database.")
+                vnfp = database.list_catalog(vnf_pkg_id=vnf[0]['vnf_pkg_id'])
 
+            else:  # here only remained the OSM_NFVO which was validated by the above code
+                vnfp = database.list_catalog(vnf_pkg_id=src_id)
+
+            vnfp_platform = vnfp[0]['platform']
+
+            if vnfp_platform != platform and origin == INTERNAL:
+                raise NFVOAgentsException(ERROR, "Choose a VNF from '%s' platform!" % platform)
+
+            sfc_template[platform] = nfvo_agent.configure_traffic_src_policy(
+                                            sfc_template[platform], origin, src_id, cp_out, database)
         except NFVOAgentOptions as op:
             return {'status': op.status, 'cp_list': op.cp_list}
         except (NFVOAgentsException, DatabaseException) as e:
             return {'status': e.status, 'reason': e.reason}
 
         # debug
-        logger.info('SFC Template UUID: %s\n%s', policy_data['sfc_uuid'],
-                    json.dumps(sfc_template[platform], indent=4, sort_keys=True))
+        logger.debug('SFC Template UUID: %s\n%s', policy_data['sfc_uuid'],
+                    nfvo_agent.dump_sfc_descriptor(sfc_template[platform]))
 
         self.cache.set(policy_data['sfc_uuid'], sfc_template)
 
@@ -546,17 +559,17 @@ class Core:
         platform = policy_data['platform']
         try:
             nfvo_agent = self._get_nfvo_agent_instance(platform)
+
+            sfc_template[platform] = nfvo_agent.configure_policies(sfc_template[platform], acl)
+
+        except NFVOAgentsException as e:
+            return {'status': e.status, 'reason': e.reason}
         except MultiSFCException as e:
             return {'status': ERROR, 'reason': str(e)}
 
-        try:
-            sfc_template[platform] = nfvo_agent.configure_policies(sfc_template[platform], acl)
-        except NFVOAgentsException as e:
-            return {'status': e.status, 'reason': e.reason}
-
-        #debug
-        logger.info('SFC Template UUID: %s\n%s', request.json['sfc_uuid'],
-                     json.dumps(sfc_template[platform], indent=4, sort_keys=True))
+        # debug
+        logger.debug('SFC Template UUID: %s\n%s', request.json['sfc_uuid'],
+                     nfvo_agent.dump_sfc_descriptor(sfc_template[platform]))
 
         self.cache.set(policy_data['sfc_uuid'], sfc_template)
 
@@ -584,11 +597,17 @@ class Core:
             return {'status': ERROR, 'reason': 'SFC UUID must be informed!'}
 
         platforms = [*sfc_template]
+        sfc_name = sfc_data.get('sfc_name')
+        if sfc_name:
+            sfc_name = sfc_name.replace(' ', '')
+        else:
+            sfc_name = unique_id()
+
         for platform in platforms:
             try:
                 nfvo_agent = self._get_nfvo_agent_instance(platform)
 
-                sfc = nfvo_agent.create_sfc(sfc_template[platform], database, self, sfc_data['sfc_uuid'])
+                sfc = nfvo_agent.create_sfc(sfc_template[platform], database, self, sfc_data['sfc_uuid'], sfc_name)
 
             except (NFVOAgentsException, DatabaseException) as ex:
                 return {'status': ex.status, 'reason': ex.reason}
@@ -597,7 +616,7 @@ class Core:
 
             # Rollback in case of error on inserting in database
             try:
-                database.insert_sfc_instance(sfc['vnf_instances'], sfc['nsd_id'], sfc['ns_id'], platform)
+                database.insert_sfc_instance(sfc['vnf_instances'], sfc['nsd_id'], sfc['ns_id'], sfc_name, platform)
             # Rollback actions
             except DatabaseException as dbe:
                 # this function raises an NFVOAgentsException and don't need to be caught,
@@ -609,6 +628,8 @@ class Core:
                     dbe.reason = ' '.join([dbe.reason, e.reason])
 
                 return {'status': dbe.status, 'reason': dbe.reason}
+
+            logger.info("SFC %s instantiated successfully!", sfc['ns_id'])
 
         self.cache.delete(sfc_data['sfc_uuid'])
 
@@ -624,7 +645,7 @@ class Core:
         try:
             sfc = database.list_sfc_instances(ns_id=sfc_id)
             if not sfc:
-                raise MultiSFCException("SFC id %s cannot be destroyed. Not found in database.")
+                raise MultiSFCException("SFC id %s cannot be destroyed. Not found in database." % sfc_id)
 
             nfvo_agent = self._get_nfvo_agent_instance(sfc[0]['platform'])
 

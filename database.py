@@ -203,12 +203,14 @@ class DatabaseConnection:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
 
-    def insert_sfc_instance(self, vnf_instances, nsd_id, ns_id, platform):
+    def insert_sfc_instance(self, vnf_instances, nsd_id, ns_id, ns_name, platform):
         """Inserts data in SFC_Instances collection in MongoDB
 
         :param vnf_instances: a list or dict with all vnf_instance_id stored in MongoDB
-        :param nsd_id: NFVO VNFFGD or NSD ID
-        :param ns_id: NFVO VNFFG or NS ID
+        :param nsd_id: SFC Descriptor ID (NVFO VNFFGD ID or NSD ID)
+        :param ns_id: SFC Instance ID (NFVO VNFFG or NS ID)
+        :param ns_name: Name of the SFC Instance
+        :param platform: The platform which runs this SFC
 
         Raises
         ------
@@ -219,6 +221,7 @@ class DatabaseConnection:
                         'vnf_instances': vnf_instances,
                         'nsd_id': nsd_id,
                         'ns_id': ns_id,
+                        'ns_name': ns_name,
                         'platform': platform
                         })
             if not data.inserted_id:
@@ -249,7 +252,7 @@ class DatabaseConnection:
             raise DatabaseException(ERROR, str(e))
 
     def list_sfc_instances(self, sfc_instance_id=None, vnf_instances=None,
-                           nsd_id=None, ns_id=None, platform=None):
+                           nsd_id=None, ns_id=None, ns_name=None, platform=None):
         """Returns a list of SFC Instances stored in MongoDB
 
         The function arguments are used to create the search criteria for the MongoDB.
@@ -259,6 +262,8 @@ class DatabaseConnection:
         :param vnf_instances: a list of VNF Instances
         :param nsd_id: an NSD id or a VNFFGD id (NFVO id)
         :param ns_id: an NS id or a VNFFG id (NFVO id)
+        :param ns_name:
+        :param platform:
         :return: A list of SFC Instances stored in database
 
         Raises
@@ -274,6 +279,8 @@ class DatabaseConnection:
             criteria['nsd_id'] = nsd_id
         if ns_id:
             criteria['ns_id'] = ns_id
+        if ns_name:
+            criteria['ns_name'] = ns_name
         if platform:
             criteria['platform'] = platform
 
