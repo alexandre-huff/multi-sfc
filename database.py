@@ -41,7 +41,7 @@ class DatabaseConnection:
             logger.critical("MongoDB Server not available! %s", e)
             exit(1)
 
-        self.db = self.client.Holistic
+        self.db = self.client.multi_sfc
 
     def insert_vnf_package(self, category, vnfd_name, dir_id, vnf_type, platform, description):
         """
@@ -50,7 +50,7 @@ class DatabaseConnection:
             DatabaseException
         """
         try:
-            res = self.db.Catalog.insert_one({
+            res = self.db.catalog.insert_one({
                 'category': category,
                 'vnfd_name': vnfd_name,
                 'dir_id': dir_id,
@@ -73,7 +73,7 @@ class DatabaseConnection:
             DatabaseException
         """
         try:
-            data = self.db.Catalog.delete_one({
+            data = self.db.catalog.delete_one({
                         '_id': ObjectId(vnf_pkg_id)
                         })
 
@@ -106,7 +106,7 @@ class DatabaseConnection:
             criteria['platform'] = platform
 
         try:
-            catalog = self.db.Catalog.find(criteria)
+            catalog = self.db.catalog.find(criteria)
 
             data = []
             for vnf in catalog:
@@ -130,7 +130,7 @@ class DatabaseConnection:
             DatabaseException
         """
         try:
-            data = self.db.VNF_Instances.insert_one({
+            data = self.db.vnf_instances.insert_one({
                         'vnf_pkg_id': vnf_pkg_id,
                         'vnfd_id': vnfd_id,
                         'vnf_id': vnf_id
@@ -152,7 +152,7 @@ class DatabaseConnection:
             DatabaseException
         """
         try:
-            res = self.db.VNF_Instances.delete_one({
+            res = self.db.vnf_instances.delete_one({
                         '_id': ObjectId(vnf_instance_id)
                         })
             if not res.deleted_count:
@@ -190,7 +190,7 @@ class DatabaseConnection:
             criteria['vnf_id'] = vnf_id
 
         try:
-            vnf_instances = self.db.VNF_Instances.find(criteria)
+            vnf_instances = self.db.vnf_instances.find(criteria)
 
             data = []
             for vnf in vnf_instances:
@@ -217,7 +217,7 @@ class DatabaseConnection:
             DatabaseException
         """
         try:
-            data = self.db.SFC_Instances.insert_one({
+            data = self.db.sfc_instances.insert_one({
                         'vnf_instances': vnf_instances,
                         'nsd_id': nsd_id,
                         'ns_id': ns_id,
@@ -241,7 +241,7 @@ class DatabaseConnection:
             DatabaseException
         """
         try:
-            data = self.db.SFC_Instances.delete_one({
+            data = self.db.sfc_instances.delete_one({
                         '_id': ObjectId(sfc_instance_id)
                         })
             if not data.deleted_count:
@@ -285,7 +285,7 @@ class DatabaseConnection:
             criteria['platform'] = platform
 
         try:
-            sfc_instances = self.db.SFC_Instances.find(criteria)
+            sfc_instances = self.db.sfc_instances.find(criteria)
 
             data = []
             for sfc in sfc_instances:
@@ -306,10 +306,10 @@ if __name__ == '__main__':
     if len(sys.argv) == 2 and sys.argv[1] == 'clean':
         database = DatabaseConnection()
 
-        result = database.db.SFC_Instances.delete_many({})
+        result = database.db.sfc_instances.delete_many({})
         print('Removed %s SFC_Instances from database.' % result.deleted_count)
 
-        result = database.db.VNF_Instances.delete_many({})
+        result = database.db.vnf_instances.delete_many({})
         print('Removed %s VNF_Instances from database.' % result.deleted_count)
 
     else:
