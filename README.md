@@ -45,3 +45,5 @@ Multi-SFC has the following software prerequisites:
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
 
+OSM Client files are licensed under the Apache License, Version 2.0. You may obtain a copy of the Apache License [here](http://www.apache.org/licenses/LICENSE-2.0).
+
