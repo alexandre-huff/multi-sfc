@@ -81,7 +81,7 @@ def get_nsd_file_name(path):
 
 
 def include_package():
-    # TODO: also include a VNF Package with YAML descriptors (needs to parse YAML to JSON)
+    # TODO: also include a VNF Package with YAML descriptors
 
     url = base_url + '/package'
 
@@ -109,7 +109,9 @@ def include_package():
         print("Invalid VNF Package!")
         return
 
-    descriptor = open(vnf_package_path + '/descriptor.json', 'r').read()
+    with open(vnf_package_path + '/descriptor.json', 'r') as f:
+        descriptor = f.read()
+
     platform = json.loads(descriptor)['platform']
     vnfd_file = get_vnfd_file_name(vnf_package_path)
 
@@ -119,21 +121,25 @@ def include_package():
 
     vnf_type = json.loads(descriptor)['type']
     if vnf_type == CLICK_VNF:
-        vnf_function = open(vnf_package_path + '/vnf.click', 'r').read()
+        with open(vnf_package_path + '/vnf.click', 'r') as f:
+            vnf_function = f.read()
         vnf_package['vnf'] = vnf_function
 
     if platform == TACKER_NFVO:
-        vnfd = open(vnfd_file, 'r').read()
+        with open(vnfd_file, 'r') as f:
+            vnfd = f.read()
         vnf_package['vnfd'] = vnfd
 
     elif platform == OSM_NFVO:
-        vnfd = open(vnfd_file, 'rb').read()
+        with open(vnfd_file, 'rb') as f:
+            vnfd = f.read()
         vnfd_bytes = base64.b64encode(vnfd)
         vnfd_str = vnfd_bytes.decode('utf-8')
         vnf_package['vnfd'] = vnfd_str
 
         nsd_file = get_nsd_file_name(vnf_package_path)
-        nsd = open(nsd_file, 'rb').read()
+        with open(nsd_file, 'rb') as f:
+            nsd = f.read()
         nsd_bytes = base64.b64encode(nsd)
         nsd_str = nsd_bytes.decode('utf-8')
         vnf_package['nsd'] = nsd_str
@@ -141,12 +147,82 @@ def include_package():
     else:
         return
 
-    response = requests.post(url, data=json.dumps(vnf_package), headers=headers).json()
+    while True:
+        response = requests.post(url, data=json.dumps(vnf_package), headers=headers).json()
 
-    if response['status'] == OK:
-        print("VNF Package included!")
-    else:
-        print(response['status'], response['reason'], sep='! ')
+        if response['status'] == OPTIONS:
+            print("\n", response['reason'], "\n", sep='')
+
+            domain_data = response['domain_data']
+            table = PrettyTable(["SEQ", "Domain"])
+            index = 0
+            row = [0, ANY]
+            table.add_row(row)
+            for item in domain_data['domains']:
+                index += 1
+                row = [index, item['domain_name']]
+                table.add_row(row)
+
+            print(table)
+            print("Select a domain (-1 to exit)")
+
+            while True:
+                domain_seq = int(input("SEQ > "))
+
+                if domain_seq < 0:
+                    return
+                elif domain_seq == 0:
+                    domain_id = ANY
+                    nfvo_id = ANY
+                else:
+                    try:
+                        domain_id = domain_data['domains'][domain_seq - 1]['domain_id']
+                        domain_name = domain_data['domains'][domain_seq - 1]['domain_name']
+                    except IndexError:
+                        print("Invalid SEQ number!")
+                        continue
+
+                    table = PrettyTable(["SEQ", "Platform Instance"])
+                    index = 0
+                    row = [0, ANY]
+                    table.add_row(row)
+                    domains = [domain for domain in domain_data['domains'] if domain['domain_id'] == domain_id]
+                    for domain in domains:
+                        for item in domain['nfvos']:
+                            index += 1
+                            row = [index, item['nfvo_name']]
+                            table.add_row(row)
+
+                    print(table)
+                    print("Select a Platform Instance in '%s' (-1 to exit)" % domain_name)
+
+                    while True:
+                        nfvo_seq = int(input("SEQ > "))
+
+                        if nfvo_seq < 0:
+                            return
+                        elif nfvo_seq == 0:
+                            nfvo_id = ANY
+                        else:
+                            try:
+                                nfvo_id = domain_data['domains'][domain_seq - 1]['nfvos'][nfvo_seq - 1]['nfvo_id']
+                            except IndexError:
+                                print("Invalid SEQ number!")
+                                continue
+                        break
+
+                break
+            vnf_package.update({
+                'domain_id': domain_id,
+                'nfvo_id': nfvo_id
+            })
+
+        elif response['status'] == OK:
+            print("VNF Package included!")
+            break
+        else:
+            print(response['status'], response['reason'], sep='! ')
+            break
 
 
 def remove_package():
@@ -182,14 +258,14 @@ def list_catalog():
     catalog = catalog['vnfs']
 
     if not catalog:
-        print("\nNo VNF available!")
+        print("\nThere is no VNF package!")
     else:
-        table = PrettyTable(["SEQ", "VNF Category", "Description", "Platform"])
+        table = PrettyTable(["SEQ", "VNF Category", "VNF Description", "Platform", "Domain", "Platform Instance"])
 
         index = 0
         for vnf in catalog:
             index += 1
-            row = [index, vnf['category'], vnf['description'], vnf['platform']]
+            row = [index, vnf['category'], vnf['description'], vnf['platform'], vnf['domain_name'], vnf['nfvo_name']]
             table.add_row(row)
 
         print(table)
@@ -272,7 +348,7 @@ def list_vnfs():
 
         print(table)
     else:
-        print("\nNo VNF instantiated in NVFO!")
+        print("\nThere is no VNF instance!")
 
     return vnfs
 
@@ -507,7 +583,7 @@ def list_sfcs():
 
         print(table)
     else:
-        print("\nNo SFC instantiated in NVFO!")
+        print("\nThere is no SFC instance!")
 
     return sfcs
 

@@ -3,7 +3,7 @@
 
 import uuid
 
-# Tacker REST API status codes
+# REST API status codes
 status = {
     200: 'OK.',
     201: 'Created.',
@@ -21,6 +21,12 @@ ERROR   = 'ERROR'
 TIMEOUT = 'TIMEOUT'
 ACTIVE  = 'ACTIVE'
 OPTIONS = 'OPTIONS'
+
+# Generic execution domain/platform for VNFs
+ANY = 'ANY'
+
+# NSD operation-status on OSM
+FAILED = 'failed'
 
 # SFC network source traffic
 INTERNAL = '1'

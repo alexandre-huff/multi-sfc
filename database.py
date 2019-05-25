@@ -41,9 +41,9 @@ class DatabaseConnection:
             logger.critical("MongoDB Server not available! %s", e)
             exit(1)
 
-        self.db = self.client.multi_sfc
+        self.db = self.client.multisfc
 
-    def insert_vnf_package(self, category, vnfd_name, dir_id, vnf_type, platform, description):
+    def insert_vnf_package(self, category, vnfd_name, dir_id, vnf_type, domain_id, nfvo_id, platform, description):
         """
         Raises
         ------
@@ -55,6 +55,8 @@ class DatabaseConnection:
                 'vnfd_name': vnfd_name,
                 'dir_id': dir_id,
                 'vnf_type': vnf_type,
+                'domain_id': domain_id,
+                'nfvo_id': nfvo_id,
                 'platform': platform,
                 'description': description
                 })
@@ -84,8 +86,8 @@ class DatabaseConnection:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
 
-    def list_catalog(self, vnf_pkg_id=None, category=None,
-                     vnfd_name=None, dir_id=None, platform=None):
+    def list_catalog(self, vnf_pkg_id=None, category=None, vnfd_name=None,
+                     dir_id=None, domain_id=None, nfvo_id=None, platform=None):
         """
         Retrieves a list of VNF Packages stored in database.
 
@@ -102,6 +104,10 @@ class DatabaseConnection:
             criteria['vnfd_name'] = vnfd_name
         if dir_id:
             criteria['dir_id'] = dir_id
+        if domain_id:
+            criteria['domain_id'] = domain_id
+        if nfvo_id:
+            criteria['nfvo_id'] = nfvo_id
         if platform:
             criteria['platform'] = platform
 

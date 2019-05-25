@@ -24,40 +24,140 @@ logger = logging.getLogger('core')
 
 database = DatabaseConnection()
 
+DOMAIN_CATALOG = 'domain-config.yaml'
+
 
 class Core:
 
     def __init__(self):
         # self.database = DatabaseConnection()
         self.cache = MemcachedCache()
-        self.tacker_agent = TackerAgent()
-        self.osm_agent = OSMAgent()
         self.click_em = ElementManagement()
 
-    def _get_nfvo_agent_instance(self, platform):
-        """
-        Returns the NFVO Agent instance based on a platform
+        self._config_data = self._parse_domain_config_file()
+        self._instantiate_nfvo_agents()
+        self._domain_catalog = self._parse_domain_catalog_data()
 
-        :param platform: the NFVO platform from VNF Package
+    def _parse_domain_config_file(self):
+        """Parses the domain config file
+
+        The config data is useful when there is a need to iterate over all NFVOs of each domain
+
+        :return: a dict containing the config data
+        """
+        raw_data = None
+        try:
+            with open(DOMAIN_CATALOG, 'r') as config:
+                raw_data = config.read()
+        except FileNotFoundError:
+            logger.critical("Missing %s file!", DOMAIN_CATALOG)
+            exit(1)
+
+        config_data = yaml.full_load(raw_data)
+
+        nfvo_keys = ('id', 'name', 'platform', 'host', 'username', 'password', 'tenant-name',
+                     'vim-name', 'vim-type', 'tunnel')
+
+        try:
+            for domain in config_data['domains']:
+
+                for nfvo in domain['nfvos']:
+
+                    missing_keys = [k for k in nfvo_keys if k not in nfvo.keys()]
+                    if missing_keys:
+                        # removing the '[' and ']' chars
+                        missing_keys = str(missing_keys)[1:-1]
+                        logger.critical("Missing key(s) %s at %s -> 'nfvos:' on %s file", missing_keys,
+                                        domain['id'], DOMAIN_CATALOG)
+                        exit(1)
+
+        except KeyError as e:
+            logger.critical("Missing key %s at 'domains:' in file %s", str(e), DOMAIN_CATALOG)
+            exit(1)
+
+        return config_data
+
+    def _parse_domain_catalog_data(self):
+        """Parses the domain config data in a domain catalog
+
+        The domain catalog is useful to access the domain catalog information directly.
+
+        :return: a dict containing the domain catalog
+        """
+
+        domain_catalog = {}
+
+        for domain in self._config_data['domains']:
+            domain_id = domain['id']
+            domain_catalog[domain_id] = {'name': domain['name']}
+
+            for nfvo in domain['nfvos']:
+                nfvo_id = nfvo['id']
+
+                # just copy the nfvo reference to have less memory usage
+                # don't remove the id of nfvo_data. Remember, it is a reference copy!
+                nfvo_data = {nfvo_id: nfvo}
+
+                domain_catalog[domain_id].update(nfvo_data)
+
+        return domain_catalog
+
+    def _instantiate_nfvo_agents(self):
+        for domain in self._config_data['domains']:
+            for nfvo in domain['nfvos']:
+                platform = nfvo['platform']
+
+                if platform == TACKER_NFVO:
+                    nfvo['nfvo_agent'] = TackerAgent()
+
+                elif platform == OSM_NFVO:
+                    nfvo['nfvo_agent'] = OSMAgent()
+
+                else:
+                    msg = "NFV platform '%s' not supported!" % platform
+                    logger.critical(msg)
+                    exit(1)
+
+    def _get_nfvo_agent_instance(self, domain_id, nfvo_id):
+        """
+        Returns the NFVO Agent instance based on both domain id and nfvo instance id
+
+        :param domain_id: the domain ID from a VNF Package stored in Catalog
+        :param nfvo_id: the NFVO ID from a VNF Package stored in Catalog
         :return: an instance of NFVO Agent
-
-        Raises
-        ------
-            MultiSFCException
         """
 
-        if platform == TACKER_NFVO:
-            return self.tacker_agent
-        elif platform == OSM_NFVO:
-            return self.osm_agent
-        else:
-            msg = "VNF Package '%s' platform not supported!" % platform
-            logger.error(msg)
-            raise MultiSFCException(msg)
+        for domain in self._config_data['domains']:
+            for nfvo in domain['nfvos']:
+                if domain['id'] == domain_id and nfvo['id'] == nfvo_id:
+
+                    return nfvo['nfvo_agent']
+
+    def _get_platform_domain_nfvo_pairs(self, platform):
+        """Retrieves each pair of domain ID and NFVO ID from domain catalog according to a platform"""
+
+        domain_nfvo_data = {'domains': []}
+        for domain in self._config_data['domains']:
+            nfvos = []
+            for nfvo in domain['nfvos']:
+                if nfvo['platform'] == platform:
+                    nfvos.append({
+                        'nfvo_id': nfvo['id'],
+                        'nfvo_name': nfvo['name']
+                    })
+            if nfvos:
+                domain_data = {
+                    'domain_id': domain['id'],
+                    'domain_name': domain['name'],
+                    'nfvos': nfvos
+                }
+                domain_nfvo_data['domains'].append(domain_data)
+
+        return domain_nfvo_data
 
     def include_package(self, vnfp_data):
         """
-        Includes a VNF Package in the local catalog and in the file repository
+        Includes a VNF Package in the VNF Catalog and in the file repository
 
         :return: an 'OK' dict status or error and its reason if not
         """
@@ -70,6 +170,22 @@ class Core:
         vnf_type = descriptor['type']
         platform = descriptor['platform']
         vnf_description = descriptor['description']
+        domain_id = vnfp_data.get('domain_id')
+        nfvo_id = vnfp_data.get('nfvo_id')
+
+        if not domain_id:
+            domain_data = self._get_platform_domain_nfvo_pairs(platform)
+            return {
+                'status': OPTIONS,
+                'reason': "Inform the Domain and Platform required to run this VNF Package",
+                'domain_data': domain_data
+            }
+        domain_id = domain_id.replace(' ', '')
+
+        if nfvo_id:
+            nfvo_id = nfvo_id.replace(' ', '')
+        else:
+            nfvo_id = ANY
 
         if vnf_type not in [CLICK_VNF, GENERAL_VNF]:
             return {'status': ERROR, 'reason': 'VNF Package unknown type: %s' % vnf_type}
@@ -127,7 +243,8 @@ class Core:
             vnf_file.close()
 
         try:
-            database.insert_vnf_package(category, vnfd_name, dir_id, vnf_type, platform, vnf_description)
+            database.insert_vnf_package(category, vnfd_name, dir_id, vnf_type, domain_id,
+                                        nfvo_id, platform, vnf_description)
         except DatabaseException as e:
             return {'status': e.status, 'reason': e.reason}
 
@@ -140,6 +257,25 @@ class Core:
         :return: a dict of vnfs
         """
         vnfs = database.list_catalog()
+        for vnf in vnfs:
+            domain_id = vnf['domain_id']
+            nfvo_id = vnf['nfvo_id']
+
+            try:
+                domain_name = self._domain_catalog[domain_id]['name']
+            except KeyError:
+                domain_name = ANY
+
+            try:
+                nfvo_name = self._domain_catalog[domain_id][nfvo_id]['name']
+            except KeyError:
+                nfvo_name = ANY
+
+            domain_data = {
+                'domain_name': domain_name,
+                'nfvo_name': nfvo_name
+            }
+            vnf.update(domain_data)
 
         return {'vnfs': vnfs}
 
@@ -175,16 +311,19 @@ class Core:
             return {'status': ERROR, 'reason': e.strerror}
 
     def list_vnfs(self):
-        """List all instantiated VNFs in NFVO"""
+        """List all instantiated VNFs in all domain NFVOs"""
 
-        try:
-            data = self.tacker_agent.list_vnfs()
-            osm_data = self.osm_agent.list_vnfs()
+        data = []
+        for domain in self._config_data['domains']:
+            for nfvo in domain['nfvos']:
+                nfvo_agent = nfvo['nfvo_agent']
 
-        except NFVOAgentsException as e:
-            return {'status': e.status, 'reason': e.reason}
+                try:
+                    vnfs = nfvo_agent.list_vnfs()
+                    data.extend(vnfs)
 
-        data.extend(osm_data)
+                except NFVOAgentsException as e:
+                    return {'status': e.status, 'reason': e.reason}
 
         return {'status': OK, 'vnfs': data}
 
@@ -200,7 +339,7 @@ class Core:
 
         db = database
 
-        # it is used to avoid fork racing conditions of the client connection of pymongo
+        # it is used to avoid fork racing conditions of client connections in pymongo
         if issubprocess:
             db = DatabaseConnection()
 
@@ -212,13 +351,14 @@ class Core:
         dir_id = catalog[0]['dir_id']
         vnfd_name = catalog[0]['vnfd_name']
         vnf_type = catalog[0]['vnf_type']
-        platform = catalog[0]['platform']
+        domain_id = catalog[0]['domain_id']
+        nfvo_id = catalog[0]['nfvo_id']
         vnfp_dir = 'repository/%s' % dir_id
 
         vnf_name = str(vnfd_name).replace('vnfd', 'vnf')
 
         try:
-            nfvo_agent = self._get_nfvo_agent_instance(platform)
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
             response = nfvo_agent.create_vnf(vnfp_dir, vnfd_name, vnf_name)
 
@@ -248,7 +388,7 @@ class Core:
 
             return {'status': ERROR, 'reason': error_message}
 
-        # TODO Maybe configure VNF functions could be in another function (e.g. init_vnfs)
+        # TODO Configuring VNF functions could be moved to a particular function (e.g. init_vnfs)
         if vnf_type == CLICK_VNF:
             function_path = 'repository/%s/vnf.click' % dir_id
             with open(function_path) as function_file:
@@ -269,7 +409,7 @@ class Core:
         return response
 
     def destroy_vnf(self, vnf_id):
-        """Destroys a given VNF in NFVO
+        """Destroys a given VNF in its NFVO
 
         :param vnf_id: the NFVO VNF's ID
         :return: OK if success, or ERROR and its reason if not
@@ -279,8 +419,9 @@ class Core:
             vnf_instance = database.list_vnf_instances(vnf_id=vnf_id)
             vnf_pkg = database.list_catalog(vnf_pkg_id=vnf_instance[0]['vnf_pkg_id'])
 
-            platform = vnf_pkg[0]['platform']
-            nfvo_agent = self._get_nfvo_agent_instance(platform)
+            domain_id = vnf_pkg[0]['domain_id']
+            nfvo_id = vnf_pkg[0]['nfvo_id']
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
             logger.info('Destroying VNF Instance %s', vnf_id)
             nfvo_agent.destroy_vnf(vnf_id)
@@ -663,14 +804,18 @@ class Core:
         return {'status': OK}
 
     def list_sfcs(self):
-        """Retrieves all SFCs from Tacker and OSM"""
+        """Retrieves all instantiated SFCs from each NFVO in all domains"""
 
-        try:
-            data = self.tacker_agent.list_sfcs()
-            osm_data = self.osm_agent.list_sfcs()
-        except NFVOAgentsException as e:
-            return {'status': e.status, 'reason': e.reason}
+        data = []
+        for domain in self._config_data['domains']:
+            for nfvo in domain['nfvos']:
+                nfvo_agent = nfvo['nfvo_agent']
 
-        data.extend(osm_data)
+                try:
+                    sfcs = nfvo_agent.list_sfcs()
+                    data.extend(sfcs)
+
+                except NFVOAgentsException as e:
+                    return {'status': e.status, 'reason': e.reason}
 
         return {'status': OK, 'sfcs': data}
