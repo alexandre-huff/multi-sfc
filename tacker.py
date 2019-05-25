@@ -179,21 +179,21 @@ class Tacker:
         url = self.tacker_endpoint + '/vnfds'
         return requests.get(url, headers=self.header)
 
-    def vnf_create(self, vnfd_id, vnf_name):
+    def vnf_create(self, vnfd_id, vnf_name, vim_id):
         """
-        Create a instance of a VNF.
+        Create an instance of a VNF.
         """
 
         url = self.tacker_endpoint + '/vnfs'
         data = """{
             "vnf": {
                 "attributes": {},
-                "vim_id": "",
+                "vim_id": "%s",
                 "description": "",
                 "vnfd_id": "%s",
                 "name": "%s"
             }
-        }""" % (vnfd_id, vnf_name)
+        }""" % (vim_id, vnfd_id, vnf_name)
 
         return requests.post(url, headers=self.header, data=data)
 
@@ -294,4 +294,10 @@ class Tacker:
         """List all SFCs."""
 
         url = self.tacker_endpoint + '/sfcs'
+        return requests.get(url, headers=self.header)
+
+    def vim_list(self):
+        """List all VIMs"""
+
+        url = self.tacker_endpoint + '/vims'
         return requests.get(url, headers=self.header)

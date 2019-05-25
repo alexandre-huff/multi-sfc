@@ -108,12 +108,12 @@ class Core:
                 platform = nfvo['platform']
 
                 if platform == TACKER_NFVO:
-                    nfvo['nfvo_agent'] = TackerAgent(nfvo['host'], nfvo['username'],
-                                                     nfvo['password'], nfvo['tenant-name'])
+                    nfvo['nfvo_agent'] = TackerAgent(nfvo['host'], nfvo['username'], nfvo['password'],
+                                                     nfvo['tenant-name'], nfvo['vim-name'], nfvo['name'])
 
                 elif platform == OSM_NFVO:
-                    nfvo['nfvo_agent'] = OSMAgent(nfvo['host'], nfvo['username'],
-                                                  nfvo['password'], nfvo['tenant-name'])
+                    nfvo['nfvo_agent'] = OSMAgent(nfvo['host'], nfvo['username'], nfvo['password'],
+                                                  nfvo['tenant-name'], nfvo['vim-name'])
 
                 else:
                     msg = "NFV platform '%s' not supported! Check %s file." % (platform, DOMAIN_CATALOG)

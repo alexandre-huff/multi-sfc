@@ -21,8 +21,11 @@ logger = logging.getLogger('osm_agent')
 class OSMAgent(implements(NFVOAgents)):
     """Implementation of the OSM Agent."""
 
-    def __init__(self, host, username, password, tenant_name):
+    def __init__(self, host, username, password, tenant_name, vim_name):
+
         self.client = osm.Client(host=host, user=username, password=password, so_project=tenant_name)
+
+        self.vim_name = vim_name
 
     def _get_repository_nsd_content(self, dir_id):
         dir_name = '/'.join([os.getcwd(), 'repository', dir_id])
@@ -137,8 +140,7 @@ class OSMAgent(implements(NFVOAgents)):
 
             logger.info("NSD created with id %s", nsd_id)
 
-            # TODO Change static argument VIM1
-            ns_id = self.client.ns.create(nsd_id, vnf_name, 'VIM1', description=' ')
+            ns_id = self.client.ns.create(nsd_id, vnf_name, self.vim_name, description=' ')
             logger.info("NS created with id %s", ns_id)
 
             ns = self.ns_polling(ns_id)
@@ -680,7 +682,7 @@ class OSMAgent(implements(NFVOAgents)):
             nsd_id = self.client.nsd.create(nsd_file)
             logger.info("NSD created with id %s", nsd_id)
 
-            ns_id = self.client.ns.create(nsd['name'], sfc_name, 'VIM1', description=' ')
+            ns_id = self.client.ns.create(nsd['name'], sfc_name, self.vim_name, description=' ')
             logger.info("NS created with id %s", ns_id)
 
             ns = self.ns_polling(ns_id)

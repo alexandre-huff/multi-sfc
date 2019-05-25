@@ -23,8 +23,10 @@ logger = logging.getLogger('tacker_agent')
 class TackerAgent(implements(NFVOAgents)):
     """Implementation of the Tacker Agent."""
 
-    def __init__(self, host, username, password, tenant_name):
+    def __init__(self, host, username, password, tenant_name, vim_name, nfvo_name):
         self.timeout = 300
+        self.vim_name = vim_name
+        self.nfvo_name = nfvo_name
 
         self.identity = IdentityManager(host, username, password, tenant_name)
         token = self.identity.get_token()
@@ -130,8 +132,20 @@ class TackerAgent(implements(NFVOAgents)):
         ------
             NFVOAgentsException
         """
+        response = self.tacker.vim_list()
+        if response.status_code != 200:
+            raise NFVOAgentsException(ERROR, status[response.status_code])
 
-        response = self.tacker.vnf_create(vnfd_id, vnf_name)
+        vims = response.json()['vims']
+        vim_id = None
+        for vim in vims:
+            if vim['name'] == self.vim_name:
+                vim_id = vim['id']
+
+        if not vim_id:
+            raise NFVOAgentsException(ERROR, "VIM name '%s' not found in '%s'!" % (self.vim_name, self.nfvo_name))
+
+        response = self.tacker.vnf_create(vnfd_id, vnf_name, vim_id)
 
         if response.status_code != 201:
             error_reason = 'VNF could not be created: %s' % status[response.status_code]
