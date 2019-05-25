@@ -18,7 +18,7 @@ class IdentityManager:
     Class responsible for identification and authentication of REST requests.
     """
 
-    def __init__(self):
+    def __init__(self, host, username, password, tenant_name):
         CONFIG_FILE = 'tacker.conf'
         if not os.path.isfile(CONFIG_FILE):
             logger.critical("Missing tacker.conf file!")
@@ -27,15 +27,15 @@ class IdentityManager:
         config = configparser.ConfigParser()
         config.read(CONFIG_FILE)
 
-        self.OPENSTACK_URL = config.get('tacker', 'url')
-        self.USERNAME      = config.get('auth', 'username')
-        self.TENANT_NAME   = config.get('auth', 'tenant_name')
-        self.PASSWORD      = config.get('auth', 'password')
-        self.FIP_INTERFACES = config['sfc_fip_router_interface']
+        self.tacker_url = "http://%s/" % host
+        self.username = username
+        self.password = password
+        self.tenant_name = tenant_name
+        self.fip_interfaces = config['sfc_fip_router_interface']
 
         self.header = {
-            'Content-type' : 'application/json',
-            'Accept'       : 'application/json'
+            'Content-type': 'application/json',
+            'Accept': 'application/json'
         }
 
         resp = self.get_identity_info()
@@ -50,7 +50,7 @@ class IdentityManager:
         :return: a dictionary containing all FIP network configured interfaces in tacker.conf file
         """
 
-        return self.FIP_INTERFACES
+        return self.fip_interfaces
 
     def get_identity_info(self):
         """
@@ -82,9 +82,9 @@ class IdentityManager:
                     }
                 }
             }
-        }""" % (self.USERNAME, self.PASSWORD, self.TENANT_NAME)
+        }""" % (self.username, self.password, self.tenant_name)
 
-        url = self.OPENSTACK_URL + 'identity/v3/auth/tokens'
+        url = self.tacker_url + 'identity/v3/auth/tokens'
         return requests.post(url, data=data, headers=self.header)
 
     def get_identity_info_keystone(self):

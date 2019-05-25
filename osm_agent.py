@@ -9,7 +9,7 @@ from time import sleep, time
 from exceptions import NFVOAgentsException
 from nfvo_agents import NFVOAgents
 from interface import implements
-from utils import OSM_NFVO, ERROR, TIMEOUT, EXTERNAL, INTERNAL, unique_id
+from utils import OSM_NFVO, ERROR, TIMEOUT, INTERNAL, FAILED
 
 from osmclient.sol005 import client as osm
 from osmclient.common.exceptions import NotFound, ClientException
@@ -21,8 +21,8 @@ logger = logging.getLogger('osm_agent')
 class OSMAgent(implements(NFVOAgents)):
     """Implementation of the OSM Agent."""
 
-    def __init__(self):
-        self.client = osm.Client(host='osm-nfvo.local')
+    def __init__(self, host, username, password, tenant_name):
+        self.client = osm.Client(host=host, user=username, password=password, so_project=tenant_name)
 
     def _get_repository_nsd_content(self, dir_id):
         dir_name = '/'.join([os.getcwd(), 'repository', dir_id])
@@ -91,7 +91,7 @@ class OSMAgent(implements(NFVOAgents)):
             try:
                 ns_status = ns['admin']['deployed']['RO']['nsr_status']
             except KeyError:
-                if ns['operational-status'] == 'failed':
+                if ns['operational-status'] == FAILED:
                     raise NFVOAgentsException(ERROR, ns['detailed-status'])
                 ns_status = 'KEY_ERROR'
 
@@ -708,7 +708,7 @@ class OSMAgent(implements(NFVOAgents)):
         """ Destroys an NS and its related NSD and VNFDs
 
         :param sfc_id:
-        :param core: no used by this agent
+        :param core: not used by this agent
         """
 
         try:

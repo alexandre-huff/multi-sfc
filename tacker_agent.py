@@ -23,10 +23,10 @@ logger = logging.getLogger('tacker_agent')
 class TackerAgent(implements(NFVOAgents)):
     """Implementation of the Tacker Agent."""
 
-    def __init__(self):
+    def __init__(self, host, username, password, tenant_name):
         self.timeout = 300
 
-        self.identity = IdentityManager()
+        self.identity = IdentityManager(host, username, password, tenant_name)
         token = self.identity.get_token()
         tacker_ep = self.identity.get_endpoints()['tacker']
 

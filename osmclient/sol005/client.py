@@ -30,21 +30,24 @@ from osmclient.sol005 import sdncontroller
 from osmclient.common.exceptions import ClientException
 import json
 
+
 class Client(object):
 
     def __init__(
         self,
         host=None,
+        user='admin',
+        password='admin',
         so_port=9999,
         so_project='admin',
         ro_host=None,
         ro_port=9090,
         **kwargs):
 
-        self._user = 'admin'
-        self._password = 'admin'
-        #self._project = so_project
-        self._project = 'admin'
+        self._user = user
+        self._password = password
+        self._project = so_project
+        # self._project = 'admin'
         self._auth_endpoint = '/admin/v1/tokens'
         self._headers = {}
 
