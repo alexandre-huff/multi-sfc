@@ -24,7 +24,6 @@ class TackerAgent(implements(NFVOAgents)):
     """Implementation of the Tacker Agent."""
 
     def __init__(self, host, username, password, tenant_name, vim_name, nfvo_name):
-        self.timeout = 300
         self.vim_name = vim_name
         self.nfvo_name = nfvo_name
 
@@ -168,7 +167,7 @@ class TackerAgent(implements(NFVOAgents)):
         """
         # IMPORTANT: This is not related to Click VNF Functions. Do not confuse it!
 
-        timeout = self.timeout
+        timeout = 300
         sleep_interval = 2
 
         while timeout > 0:
@@ -317,9 +316,10 @@ class TackerAgent(implements(NFVOAgents)):
             raise NFVOAgentsException(ERROR, error_reason)
 
         #  pooling waiting to remove successfully this VNF
-        SLEEP_TIME = 2
-        while self.timeout > 0:
-            time.sleep(SLEEP_TIME)
+        timeout = 300
+        sleep_interval = 2
+        while timeout > 0:
+            time.sleep(sleep_interval)
             vnf = self.tacker.vnf_show(vnf_id)
 
             if vnf.status_code == 200:
@@ -338,7 +338,7 @@ class TackerAgent(implements(NFVOAgents)):
                 logger.error(error_reason)
                 raise NFVOAgentsException(ERROR, error_reason)
 
-            self.timeout -= SLEEP_TIME
+            timeout -= sleep_interval
 
         self.delete_vnfd(vnfd_id)
 
