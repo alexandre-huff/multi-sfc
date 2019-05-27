@@ -17,21 +17,42 @@ from tacker import IdentityManager, Tacker
 # from fake_tacker import IdentityManager, Tacker
 
 
+REACHABLE = "REACHABLE"
+
+
 logger = logging.getLogger('tacker_agent')
 
 
 class TackerAgent(implements(NFVOAgents)):
     """Implementation of the Tacker Agent."""
 
-    def __init__(self, host, username, password, tenant_name, vim_name, nfvo_name):
+    def __init__(self, host, username, password, tenant_name, vim_name, nfvo_name, domain_name):
         self.vim_name = vim_name
         self.nfvo_name = nfvo_name
+        self.domain_name = domain_name
 
         self.identity = IdentityManager(host, username, password, tenant_name)
         token = self.identity.get_token()
         tacker_ep = self.identity.get_endpoints()['tacker']
 
         self.tacker = Tacker(token, tacker_ep)
+
+        self.vim_id = self._get_vim_id()
+
+    def _get_vim_id(self):
+        response = self.tacker.vim_list()
+        if response.status_code != 200:
+            raise NFVOAgentsException(ERROR, status[response.status_code])
+
+        vims = response.json()['vims']
+
+        for vim in vims:
+            if vim['name'] == self.vim_name:
+                return vim['id']
+
+        msg = "VIM '%s' not found in '%s' platform!" % (self.vim_name, self.nfvo_name)
+        logger.critical(msg)
+        exit(1)
 
     @staticmethod
     def vnfd_json_yaml_parser(vnfd):
@@ -131,20 +152,22 @@ class TackerAgent(implements(NFVOAgents)):
         ------
             NFVOAgentsException
         """
-        response = self.tacker.vim_list()
+        response = self.tacker.vim_show(self.vim_id)
         if response.status_code != 200:
             raise NFVOAgentsException(ERROR, status[response.status_code])
 
-        vims = response.json()['vims']
-        vim_id = None
-        for vim in vims:
-            if vim['name'] == self.vim_name:
-                vim_id = vim['id']
+        vim = response.json()['vim']
 
-        if not vim_id:
+        if not vim:
             raise NFVOAgentsException(ERROR, "VIM name '%s' not found in '%s'!" % (self.vim_name, self.nfvo_name))
 
-        response = self.tacker.vnf_create(vnfd_id, vnf_name, vim_id)
+        vim_status = vim['status']
+
+        if vim_status != REACHABLE:
+            raise NFVOAgentsException(ERROR, "VIM status of '%s' is '%s' in '%s' platform!"
+                                      % (self.vim_name, vim_status, self.nfvo_name))
+
+        response = self.tacker.vnf_create(vnfd_id, vnf_name, self.vim_id)
 
         if response.status_code != 201:
             error_reason = 'VNF could not be created: %s' % status[response.status_code]
@@ -235,11 +258,17 @@ class TackerAgent(implements(NFVOAgents)):
             logger.info('Using an existing VNF descriptor id %s!', vnfd_id)
 
         # Generating a unique VNF name to avoid Tacker Internal Server Error
+        response = self.tacker.vnf_list()
+
+        if response.status_code != 200:
+            raise NFVOAgentsException(ERROR, status[response.status_code])
+
+        vnfs = response.json()['vnfs']
+
         seq = 1
         vnf_name = ''.join([vnf_name, '-', str(seq)])
-        vnfs = self.list_vnfs()
         while True:
-            vnf_list = [vnf for vnf in vnfs if vnf['vnf_name'] == vnf_name]
+            vnf_list = [vnf for vnf in vnfs if vnf['name'] == vnf_name]
             if len(vnf_list) > 0:
                 seq += 1
                 vnf_name = vnf_name[:-1] + str(seq)
@@ -378,8 +407,19 @@ class TackerAgent(implements(NFVOAgents)):
             vnfd_id = vnf['vnfd_id']
             vnf_status = vnf['status']
 
-            vnfs.append({'vnf_id': vnf_id, 'vnf_name': vnf_name, 'instance_name': instance_name,
-                         'mgmt_url': mgmt_url, 'vnfd_id': vnfd_id, 'vnf_status': vnf_status, 'platform': TACKER_NFVO})
+            if vnf['vim_id'] == self.vim_id:
+                vnfs.append({
+                    'vnf_id': vnf_id,
+                    'vnf_name': vnf_name,
+                    'instance_name': instance_name,
+                    'mgmt_url': mgmt_url,
+                    'vnfd_id': vnfd_id,
+                    'vnf_status': vnf_status,
+                    'platform': TACKER_NFVO,
+                    'domain_name': self.domain_name,
+                    'nfvo_name': self.nfvo_name,
+                    'vim_name': self.vim_name
+                })
 
         return vnfs
 

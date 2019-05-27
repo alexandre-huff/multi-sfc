@@ -9,10 +9,14 @@ from time import sleep, time
 from exceptions import NFVOAgentsException
 from nfvo_agents import NFVOAgents
 from interface import implements
-from utils import OSM_NFVO, ERROR, TIMEOUT, INTERNAL, FAILED
+from utils import OSM_NFVO, ERROR, TIMEOUT, INTERNAL
 
 from osmclient.sol005 import client as osm
 from osmclient.common.exceptions import NotFound, ClientException
+
+
+# NSD operation-status on OSM
+FAILED = 'failed'
 
 
 logger = logging.getLogger('osm_agent')
@@ -21,11 +25,25 @@ logger = logging.getLogger('osm_agent')
 class OSMAgent(implements(NFVOAgents)):
     """Implementation of the OSM Agent."""
 
-    def __init__(self, host, username, password, tenant_name, vim_name):
+    def __init__(self, host, username, password, tenant_name, vim_name, nfvo_name, domain_name):
 
         self.client = osm.Client(host=host, user=username, password=password, so_project=tenant_name)
 
         self.vim_name = vim_name
+        self.nfvo_name = nfvo_name
+        self.domain_name = domain_name
+
+        self.vim_id = self._get_vim_id()
+
+    def _get_vim_id(self):
+        try:
+            vim = self.client.vim.get(self.vim_name)
+        except NotFound as e:
+            msg = "VIM '%s' not found in '%s platform!" % (self.vim_name, self.nfvo_name)
+            logger.critical(msg)
+            exit(1)
+        else:
+            return vim['_id']
 
     def _get_repository_nsd_content(self, dir_id):
         dir_name = '/'.join([os.getcwd(), 'repository', dir_id])
@@ -62,8 +80,19 @@ class OSMAgent(implements(NFVOAgents)):
             vnfd_id = vnf.get('vnfd-id')
             vnf_status = vdu0.get('status')
 
-            vnfs.append({'vnf_id': vnf_id, 'vnf_name': vnf_name, 'instance_name': instance_name,
-                         'mgmt_url': mgmt_url, 'vnfd_id': vnfd_id, 'vnf_status': vnf_status, 'platform': OSM_NFVO})
+            if vnf['vim-account-id'] == self.vim_id:
+                vnfs.append({
+                    'vnf_id': vnf_id,
+                    'vnf_name': vnf_name,
+                    'instance_name': instance_name,
+                    'mgmt_url': mgmt_url,
+                    'vnfd_id': vnfd_id,
+                    'vnf_status': vnf_status,
+                    'platform': OSM_NFVO,
+                    'domain_name': self.domain_name,
+                    'nfvo_name': self.nfvo_name,
+                    'vim_name': self.vim_name
+                })
 
         return vnfs
 
@@ -139,7 +168,12 @@ class OSMAgent(implements(NFVOAgents)):
             nsd_id = self.client.nsd.create(nsd_path)
 
             logger.info("NSD created with id %s", nsd_id)
+        except ClientException as e:
+            logger.error(str(e))
+            self.client.vnfd.delete(vnfd_id)
+            raise NFVOAgentsException(ERROR, str(e))
 
+        try:
             ns_id = self.client.ns.create(nsd_id, vnf_name, self.vim_name, description=' ')
             logger.info("NS created with id %s", ns_id)
 
@@ -148,7 +182,14 @@ class OSMAgent(implements(NFVOAgents)):
             vnf_id = ns['constituent-vnfr-ref'][0]
             vnf = self.client.vnf.get(vnf_id)
 
-        except ClientException as e:
+        except (ClientException, NFVOAgentsException) as e:
+            logger.error(str(e))
+            logger.info("Rollback VNF creation actions are being done")
+            self.client.ns.delete(vnf_name)
+            self.client.nsd.delete(nsd_id)
+            self.client.vnfd.delete(vnfd_id)
+            logger.info("Rollback Done!")
+
             raise NFVOAgentsException(ERROR, str(e))
 
         vnf_ip = vnf['ip-address']

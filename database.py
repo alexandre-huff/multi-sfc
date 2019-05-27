@@ -124,10 +124,12 @@ class DatabaseConnection:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
 
-    def insert_vnf_instance(self, vnf_pkg_id, vnfd_id, vnf_id):
+    def insert_vnf_instance(self, vnf_pkg_id, domain_id, nfvo_id, vnfd_id, vnf_id):
         """Inserts data in VNF_Instances collection in MongoDB
 
         :param vnf_pkg_id: local VNF Package ID
+        :param domain_id: the Domain ID in the domain catalog
+        :param nfvo_id: the NFVO ID in the domain catalog
         :param vnfd_id: NFVO VNFD ID
         :param vnf_id: NFVO VNF ID
 
@@ -138,6 +140,8 @@ class DatabaseConnection:
         try:
             data = self.db.vnf_instances.insert_one({
                         'vnf_pkg_id': vnf_pkg_id,
+                        'domain_id': domain_id,
+                        'nfvo_id': nfvo_id,
                         'vnfd_id': vnfd_id,
                         'vnf_id': vnf_id
                         })
@@ -168,8 +172,8 @@ class DatabaseConnection:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
 
-    def list_vnf_instances(self, vnf_instance_id=None,
-                           vnf_pkg_id=None, vnfd_id=None, vnf_id=None):
+    def list_vnf_instances(self, vnf_instance_id=None, vnf_pkg_id=None,
+                           domain_id=None, nfvo_id=None, vnfd_id=None, vnf_id=None):
         """Returns a list of VNF Instances stored in MongoDB
 
         The function arguments are used to create the search criteria for the MongoDB.
@@ -177,6 +181,8 @@ class DatabaseConnection:
 
         :param vnf_instance_id:
         :param vnf_pkg_id:
+        :param domain_id: the domain ID in domain catalog
+        :param nfvo_id: the nfvo ID in domain catalog
         :param vnfd_id:
         :param vnf_id:
         :return: A list of VNF Instances stored in database
@@ -190,6 +196,10 @@ class DatabaseConnection:
             criteria['_id'] = ObjectId(vnf_instance_id)
         if vnf_pkg_id:
             criteria['vnf_pkg_id'] = vnf_pkg_id
+        if domain_id:
+            criteria['domain_id'] = domain_id
+        if nfvo_id:
+            criteria['nfvo_id'] = nfvo_id
         if vnfd_id:
             criteria['vnfd_id'] = vnfd_id
         if vnf_id:

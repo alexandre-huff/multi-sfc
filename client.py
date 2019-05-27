@@ -274,7 +274,7 @@ def list_catalog():
 
 
 def create_vnf():
-    url = base_url + '/vnfs/'
+    url = base_url + '/vnfs'
 
     catalog = list_catalog()
     if not catalog:
@@ -286,17 +286,101 @@ def create_vnf():
     if seq <= 0:
         return
     try:
-        vnf_pkg_id = catalog[seq - 1]['_id']
+        vnfp_data = {'vnfp_id': catalog[seq - 1]['_id']}
     except IndexError:
         print("Invalid SEQ number!")
         return
 
-    response = requests.post(url + vnf_pkg_id, headers=headers).json()
+    while True:
+        response = requests.post(url, data=json.dumps(vnfp_data), headers=headers).json()
 
-    if response['status'] == OK:
-        print("VNF instantiated successfully!")
+        if response['status'] == OPTIONS:
+            print("\n", response['reason'], "\n", sep='')
+            header = ["Domain"]
+            rows = []
+            domain_data = response['domain_data']['domains']
+            if len(domain_data) > 1:
+                for domain in response['domain_data']['domains']:
+                    rows.append([domain['domain_name']])
+
+                index = select_pretty_table_data(header, rows, "Select a Domain")
+                if index is None:
+                    return
+
+                domain_id = domain_data[index]['domain_id']
+
+            else:
+                domain_id = domain_data[0]['domain_id']
+                index = 0
+
+            header = ["Platform Instance"]
+            rows = []
+            nfvos = domain_data[index]['nfvos']
+            for nfvo in nfvos:
+                rows.append([nfvo['nfvo_name']])
+
+            nfvo_index = select_pretty_table_data(header, rows, "Select a Platform Instance")
+            if nfvo_index is None:
+                return
+
+            nfvo_id = nfvos[nfvo_index]['nfvo_id']
+
+            vnfp_data.update({
+                'domain_id': domain_id,
+                'nfvo_id': nfvo_id
+            })
+
+        elif response['status'] == OK:
+            print("VNF instantiated successfully!")
+            break
+
+        else:
+            print(response['status'], response['reason'], sep=': ')
+            break
+
+
+def select_pretty_table_data(header, rows, msg, returned_field="SEQ"):
+    """Generic function to print and choose data
+
+    :param header: a list with header field names
+    :param rows: a list containing another list with field values
+    :param msg: a message to show to the user
+    :param returned_field: the name of the field to be returned
+    :return: the value of the selected field, or None if an error happens
+    """
+    header.insert(0, "SEQ")
+    field_index = header.index(returned_field)
+
+    table = PrettyTable(header)
+    index = 0
+    for row in rows:
+        index += 1
+        row.insert(0, index)
+        table.add_row(row)
+
+    print(table)
+    print(msg, "(-1 to exit)")
+
+    while True:
+        seq = int(input("SEQ > "))
+
+        if seq == 0:
+            print("Invalid SEQ number!")
+            continue
+        elif seq < 0:
+            return None
+
+        try:
+            data = rows[seq - 1][field_index]
+            break
+        except IndexError:
+            print("Invalid SEQ number!")
+            continue
+
+    if returned_field == "SEQ":
+        return data - 1
     else:
-        print(response['status'], response['reason'], sep=': ')
+        return data
 
 
 def destroy_vnf():
@@ -338,12 +422,14 @@ def list_vnfs():
     vnfs = response['vnfs']
 
     if vnfs:
-        table = PrettyTable(["SEQ", "VNF Name", "Instance Name", "Mgmt Address", "Status", "Platform"])
+        table = PrettyTable(["SEQ", "VNF Name", "Instance Name", "Mgmt Address", "Status", "Platform",
+                             "Domain", "Platform Instance", "Platform VIM"])
 
         index = 0
         for vnf in vnfs:
             index += 1
-            row = [index, vnf['vnf_name'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform']]
+            row = [index, vnf['vnf_name'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform'],
+                   vnf['domain_name'], vnf['nfvo_name'], vnf['vim_name']]
             table.add_row(row)
 
         print(table)

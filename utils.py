@@ -25,9 +25,6 @@ OPTIONS = 'OPTIONS'
 # Generic execution domain/platform for VNFs
 ANY = 'ANY'
 
-# NSD operation-status on OSM
-FAILED = 'failed'
-
 # SFC network source traffic
 INTERNAL = '1'
 EXTERNAL = '2'

@@ -109,11 +109,13 @@ class Core:
 
                 if platform == TACKER_NFVO:
                     nfvo['nfvo_agent'] = TackerAgent(nfvo['host'], nfvo['username'], nfvo['password'],
-                                                     nfvo['tenant-name'], nfvo['vim-name'], nfvo['name'])
+                                                     nfvo['tenant-name'], nfvo['vim-name'], nfvo['name'],
+                                                     domain['name'])
 
                 elif platform == OSM_NFVO:
                     nfvo['nfvo_agent'] = OSMAgent(nfvo['host'], nfvo['username'], nfvo['password'],
-                                                  nfvo['tenant-name'], nfvo['vim-name'])
+                                                  nfvo['tenant-name'], nfvo['vim-name'], nfvo['name'],
+                                                  domain['name'])
 
                 else:
                     msg = "NFV platform '%s' not supported! Check %s file." % (platform, DOMAIN_CATALOG)
@@ -135,8 +137,14 @@ class Core:
 
                     return nfvo['nfvo_agent']
 
-    def _get_platform_domain_nfvo_pairs(self, platform):
-        """Retrieves each pair of domain ID and NFVO ID from domain catalog according to a platform"""
+    def _get_domains_and_nfvos(self, platform, domain_id):
+        """Retrieves a list of domains with their NFVOs from domain catalog according to a given platform
+
+        :param platform: a platform type (i.e. NFVO)
+        :param domain_id: the id of a domain stored in catalog domain or in vnf catalog database, or ANY for all domains
+
+        :return: a list with domain ids and names each containing a list of NFVO ids and names
+        """
 
         domain_nfvo_data = {'domains': []}
         for domain in self._config_data['domains']:
@@ -147,7 +155,7 @@ class Core:
                         'nfvo_id': nfvo['id'],
                         'nfvo_name': nfvo['name']
                     })
-            if nfvos:
+            if (nfvos and domain_id == ANY) or (nfvos and domain_id == domain['id']):
                 domain_data = {
                     'domain_id': domain['id'],
                     'domain_name': domain['name'],
@@ -176,7 +184,7 @@ class Core:
         nfvo_id = vnfp_data.get('nfvo_id')
 
         if not domain_id:
-            domain_data = self._get_platform_domain_nfvo_pairs(platform)
+            domain_data = self._get_domains_and_nfvos(platform, ANY)
             return {
                 'status': OPTIONS,
                 'reason': "Inform the Domain and Platform required to run this VNF Package",
@@ -322,17 +330,21 @@ class Core:
 
                 try:
                     vnfs = nfvo_agent.list_vnfs()
-                    data.extend(vnfs)
+                    # avoid to show same vnf more than once in case of
+                    # using a same NFVO using different VIMs in domain catalog
+                    for vnf in vnfs:
+                        if vnf not in data:
+                            data.extend([vnf])
 
                 except NFVOAgentsException as e:
                     return {'status': e.status, 'reason': e.reason}
 
         return {'status': OK, 'vnfs': data}
 
-    def create_vnf(self, vnf_pkg_id, issubprocess=False):
+    def create_vnf(self, vnf_pkg_data, issubprocess=False):
         """ Instantiates a given VNF and initializes its function in NFVO
 
-        :param vnf_pkg_id:
+        :param vnf_pkg_data: used to instantiate VNFs based on vnfp_id, domain_id, and nfvo_id
         :param issubprocess: states that this function is running in a subprocess
         :return: a dict containing OK, vnfd_id, vnf_id and vnf_ip if success, or ERROR and its reason if not
         """
@@ -345,7 +357,7 @@ class Core:
         if issubprocess:
             db = DatabaseConnection()
 
-        catalog = db.list_catalog(vnf_pkg_id=vnf_pkg_id)
+        catalog = db.list_catalog(vnf_pkg_id=vnf_pkg_data['vnfp_id'])
 
         if not catalog:
             return {'status': ERROR, 'reason': 'VNF Package not found!'}
@@ -353,11 +365,38 @@ class Core:
         dir_id = catalog[0]['dir_id']
         vnfd_name = catalog[0]['vnfd_name']
         vnf_type = catalog[0]['vnf_type']
-        domain_id = catalog[0]['domain_id']
-        nfvo_id = catalog[0]['nfvo_id']
+        platform = catalog[0]['platform']
+        domain_id = catalog[0]['domain_id'] if vnf_pkg_data.get('domain_id') is None else vnf_pkg_data.get('domain_id')
+        nfvo_id = catalog[0]['nfvo_id'] if vnf_pkg_data.get('nfvo_id') is None else vnf_pkg_data.get('nfvo_id')
+        vnfp_id = vnf_pkg_data['vnfp_id']
         vnfp_dir = 'repository/%s' % dir_id
 
         vnf_name = str(vnfd_name).replace('vnfd', 'vnf')
+
+        if domain_id == ANY or nfvo_id == ANY:
+
+            domain_data = self._get_domains_and_nfvos(platform, domain_id)
+            # trying to select domain and nfvo automatically
+            if len(domain_data['domains']) == 1:
+                domain_id = domain_data['domains'][0]['domain_id']
+
+                if len(domain_data['domains'][0]['nfvos']) == 1:
+                    nfvo_id = domain_data['domains'][0]['nfvos'][0]['nfvo_id']
+
+            if domain_id == ANY:
+                return {
+                    'status': OPTIONS,
+                    'reason': "Inform a Domain and a Platform to run this VNF",
+                    'domain_data': domain_data
+                }
+
+            if nfvo_id == ANY:
+                return {
+                    'status': OPTIONS,
+                    'reason': "Inform a Platform Instance to run this VNF in domain '%s'"
+                              % self._domain_catalog[domain_id]['name'],
+                    'domain_data': domain_data
+                }
 
         try:
             nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
@@ -372,7 +411,7 @@ class Core:
         logger.info('VNF %s is active with IP %s', response['vnf_id'], response['vnf_ip'])
 
         try:
-            db.insert_vnf_instance(vnf_pkg_id, response['vnfd_id'], response['vnf_id'])
+            db.insert_vnf_instance(vnfp_id, domain_id, nfvo_id, response['vnfd_id'], response['vnf_id'])
 
         # Rollback actions if database inserting fails
         except DatabaseException as dbe:
@@ -419,10 +458,9 @@ class Core:
 
         try:
             vnf_instance = database.list_vnf_instances(vnf_id=vnf_id)
-            vnf_pkg = database.list_catalog(vnf_pkg_id=vnf_instance[0]['vnf_pkg_id'])
 
-            domain_id = vnf_pkg[0]['domain_id']
-            nfvo_id = vnf_pkg[0]['nfvo_id']
+            domain_id = vnf_instance[0]['domain_id']
+            nfvo_id = vnf_instance[0]['nfvo_id']
             nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
             logger.info('Destroying VNF Instance %s', vnf_id)
