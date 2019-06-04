@@ -9,7 +9,7 @@ import base64
 import tarfile
 
 from click_manager import ElementManagement
-from exceptions import NFVOAgentsException, NFVOAgentOptions, MultiSFCException, DatabaseException
+from exceptions import NFVOAgentsException, NFVOAgentOptions, MultiSFCException, DatabaseException, DomainDataException
 from utils import *
 from flask import request
 from tacker_agent import TackerAgent
@@ -109,13 +109,13 @@ class Core:
 
                 if platform == TACKER_NFVO:
                     nfvo['nfvo_agent'] = TackerAgent(nfvo['host'], nfvo['username'], nfvo['password'],
-                                                     nfvo['tenant-name'], nfvo['vim-name'], nfvo['name'],
-                                                     domain['name'])
+                                                     nfvo['tenant-name'], nfvo['vim-name'], domain['id'],
+                                                     domain['name'], nfvo['id'], nfvo['name'])
 
                 elif platform == OSM_NFVO:
                     nfvo['nfvo_agent'] = OSMAgent(nfvo['host'], nfvo['username'], nfvo['password'],
-                                                  nfvo['tenant-name'], nfvo['vim-name'], nfvo['name'],
-                                                  domain['name'])
+                                                  nfvo['tenant-name'], nfvo['vim-name'], domain['id'],
+                                                  domain['name'], nfvo['id'], nfvo['name'])
 
                 else:
                     msg = "NFV platform '%s' not supported! Check %s file." % (platform, DOMAIN_CATALOG)
@@ -289,6 +289,35 @@ class Core:
 
         return {'vnfs': vnfs}
 
+    def list_domain_nfvo_vnfs(self, domain_id, nfvo_id):
+        platform = self._domain_catalog[domain_id][nfvo_id]['platform']
+
+        vnfs = database.list_catalog(platform=platform,
+                                     domain_id={"$in": [domain_id, "ANY"]},
+                                     nfvo_id={"$in": [nfvo_id, "ANY"]})
+
+        for vnf in vnfs:
+            domain_id = vnf['domain_id']
+            nfvo_id = vnf['nfvo_id']
+
+            try:
+                domain_name = self._domain_catalog[domain_id]['name']
+            except KeyError:
+                domain_name = ANY
+
+            try:
+                nfvo_name = self._domain_catalog[domain_id][nfvo_id]['name']
+            except KeyError:
+                nfvo_name = ANY
+
+            domain_data = {
+                'domain_name': domain_name,
+                'nfvo_name': nfvo_name
+            }
+            vnf.update(domain_data)
+
+        return {'vnfs': vnfs}
+
     def delete_package(self, pkg_id):
         """
         Remove a VNF Package from the local catalog and its repository files
@@ -332,6 +361,7 @@ class Core:
                     vnfs = nfvo_agent.list_vnfs()
                     # avoid to show same vnf more than once in case of
                     # using a same NFVO using different VIMs in domain catalog
+                    # TODO Consider remove this loop, as each agent instance just returns its own VNFs
                     for vnf in vnfs:
                         if vnf not in data:
                             data.extend([vnf])
@@ -373,30 +403,7 @@ class Core:
 
         vnf_name = str(vnfd_name).replace('vnfd', 'vnf')
 
-        if domain_id == ANY or nfvo_id == ANY:
-
-            domain_data = self._get_domains_and_nfvos(platform, domain_id)
-            # trying to select domain and nfvo automatically
-            if len(domain_data['domains']) == 1:
-                domain_id = domain_data['domains'][0]['domain_id']
-
-                if len(domain_data['domains'][0]['nfvos']) == 1:
-                    nfvo_id = domain_data['domains'][0]['nfvos'][0]['nfvo_id']
-
-            if domain_id == ANY:
-                return {
-                    'status': OPTIONS,
-                    'reason': "Inform a Domain and a Platform to run this VNF",
-                    'domain_data': domain_data
-                }
-
-            if nfvo_id == ANY:
-                return {
-                    'status': OPTIONS,
-                    'reason': "Inform a Platform Instance to run this VNF in domain '%s'"
-                              % self._domain_catalog[domain_id]['name'],
-                    'domain_data': domain_data
-                }
+        domain_id, nfvo_id = self.validate_platform_domain_nfvo(platform, domain_id, nfvo_id)
 
         try:
             nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
@@ -536,27 +543,56 @@ class Core:
             logger.error(message)
             raise MultiSFCException(message)
 
-    def get_vnf_package(self, vnf_id):
-        """Retrieves a VNF Package stored in Catalog from a given NFVO's VNF ID
+    # def get_vnf_package(self, vnf_id):
+    #     """Retrieves a VNF Package stored in Catalog from a given NFVO's VNF ID
+    #
+    #     :param vnf_id:
+    #     :return:
+    #     """
+    #
+    #     try:
+    #         data = database.list_vnf_instances(vnf_id=vnf_id)
+    #     except DatabaseException as e:
+    #         return {'status': e.status, 'reason': e.reason}
+    #
+    #     if data:
+    #         return {'status': OK, 'package': data[0]}
+    #     else:
+    #         return {'status': ERROR, 'reason': 'VNF Package not found in Catalog!'}
 
-        :param vnf_id:
-        :return:
+    def get_domain_catalog(self):
+        """Retrieves information of all domains in domain catalog
+
+        :return information of all domain such as domain id and name, nfvo id and name, vim name,
+        tenant name, and tunnel type
         """
+        domain_data = []
+        for domain in self._config_data['domains']:
+
+            for nfvo in domain['nfvos']:
+                data = {
+                    'domain_id': domain['id'],
+                    'domain_name': domain['name'],
+                    'nfvo_id': nfvo['id'],
+                    'nfvo_name': nfvo['name'],
+                    'tenant_name': nfvo['tenant-name'],
+                    'vim_name': nfvo['vim-name'],
+                    'tunnel': nfvo['tunnel']
+                }
+                domain_data.append(data)
+        return domain_data
+
+    def get_policies(self, sfc_uuid):
+        """Retrieves the NFVO classifier ACL of the first SFC segment"""
+        sfc_segments = self.cache.get(sfc_uuid)
+        if sfc_segments is None:
+            return {'status': ERROR, 'reason': 'SFC UUID not found!'}
+
+        domain_id = sfc_segments[0]['domain_id']
+        nfvo_id = sfc_segments[0]['nfvo_id']
 
         try:
-            data = database.list_vnf_instances(vnf_id=vnf_id)
-        except DatabaseException as e:
-            return {'status': e.status, 'reason': e.reason}
-
-        if data:
-            return {'status': OK, 'package': data[0]}
-        else:
-            return {'status': ERROR, 'reason': 'VNF Package not found in Catalog!'}
-
-    def get_policies(self, platform):
-        """Retrieves the NFVO classifier ACL"""
-        try:
-            nfvo_agent = self._get_nfvo_agent_instance(platform)
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
         except MultiSFCException as e:
             return {'status': ERROR, 'reason': str(e)}
 
@@ -565,15 +601,102 @@ class Core:
         return {'acl': acl_criterias}
 
     def create_sfc_uuid(self):
-        """Retrieves a unique identifier in order to compose a new SFC
+        """Retrieves an unique identifier in order to compose a new SFC
 
         :return: a unique identifier string
         """
 
         sfc_uuid = unique_id()
-        self.cache.set(sfc_uuid, {})
+        self.cache.set(sfc_uuid, [])
 
         return {'sfc_uuid': sfc_uuid}
+
+    def validate_platform_domain_nfvo(self, platform, domain_id, nfvo_id):
+        """
+        Validates if the domain_id and nfvo_id exist in Domain Catalog and if they correspond to the informed platform
+
+        This function also tries to select automatically both domain and nfvo, based on the informed platform
+
+        :param platform: the platform type
+        :param domain_id:
+        :param nfvo_id:
+        :return: a domain_id and nfvo_id
+
+        Raises
+        ------
+            DomainDataException
+                In case of having multiple choice of domains or nfvos
+
+            MultiSFCException
+                In case domain, nfvo, and platform don't match with domain catalog data
+        """
+        if domain_id == ANY or nfvo_id == ANY:
+
+            domain_data = self._get_domains_and_nfvos(platform, domain_id)
+            # trying to select domain and nfvo automatically
+            if len(domain_data['domains']) == 1:
+                domain_id = domain_data['domains'][0]['domain_id']
+
+                if len(domain_data['domains'][0]['nfvos']) == 1:
+                    nfvo_id = domain_data['domains'][0]['nfvos'][0]['nfvo_id']
+
+            if domain_id == ANY:
+                raise DomainDataException(OPTIONS, "Inform a Domain and a Platform to run this VNF", domain_data)
+
+            if nfvo_id == ANY:
+                reason = "Inform a Platform Instance to run this VNF in domain '%s'" \
+                         % self._domain_catalog[domain_id]['name']
+                raise DomainDataException(OPTIONS, reason, domain_data)
+
+        if self._domain_catalog[domain_id][nfvo_id]['platform'] != platform:
+            msg = "Domain '%s' , NFVO '%s', and Platform '%s' don't match!" % (domain_id, nfvo_id, platform)
+            logger.error(msg)
+            raise MultiSFCException(msg)
+
+        return domain_id, nfvo_id
+
+    def validate_sfc_domain_nfvo_vnf_package(self, vnf_pkg_obj, domain_id, nfvo_id):
+        """Validates if a VNF Package can be instantiated in the corresponding domain and nfvo
+
+        This function compares if information provided in domain_id and nfvo_id matches in VNF Package catalog
+        and in Domain Catalog. It validates input mistakes from the user and post modifications in domain-config file.
+        Post modifications can happen when a VNF Package has been stored in database before a domain-config file
+        modification, leading to information conflicts
+
+        :param vnf_pkg_obj: a VNF Package object from VNF Catalog
+        :param domain_id:
+        :param nfvo_id:
+
+        Raises
+        ------
+            MultiSFCException
+        """
+        try:
+            _ = self._domain_catalog[domain_id]
+            _ = self._domain_catalog[domain_id][nfvo_id]
+        except KeyError as e:
+            msg = "Provided information mismatch from Domain Catalog: %s" % str(e)
+            logger.error(msg)
+            raise MultiSFCException(msg)
+
+        if vnf_pkg_obj is None:
+            raise MultiSFCException("Invalid VNF Package!")
+
+        pkg_domain_id = vnf_pkg_obj['domain_id']
+        pkg_nfvo_id = vnf_pkg_obj['nfvo_id']
+        pkg_platform = vnf_pkg_obj['platform']
+
+        if pkg_platform != self._domain_catalog[domain_id][nfvo_id]['platform']:
+            raise MultiSFCException("Choose a VNF Package with '%s' platform!"
+                                    % self._domain_catalog[domain_id][nfvo_id]['platform'])
+
+        if pkg_domain_id != ANY and pkg_domain_id != domain_id:
+            raise MultiSFCException("Choose a VNF Package from Domain '%s'!"
+                                    % self._domain_catalog[domain_id]['name'])
+
+        if pkg_nfvo_id != ANY and pkg_nfvo_id != nfvo_id:
+            raise MultiSFCException("Choose a VNF Package from Platform Instance '%s'!"
+                                    % self._domain_catalog[domain_id][nfvo_id]['name'])
 
     def compose_sfp(self, sfp_data):
         """Performs VNF Chaining in the SFC Template.
@@ -590,14 +713,16 @@ class Core:
         :param sfp_data: must be a dict with fields:
             - sfc_uuid: the unique identifier for the SFC being composed
             - vnf_pkg_id: always required
+            - domain_id:
+            - nfvo_id:
             - cp_out: not required, but can be used as a manually user input
 
         :return: OK if success, or ERROR and its reason if not, or OPTIONS and a cp_list dict
         """
 
         try:
-            sfc_template = self.cache.get(sfp_data['sfc_uuid'])
-            if sfc_template is None:
+            sfc_segment_templates = self.cache.get(sfp_data['sfc_uuid'])
+            if sfc_segment_templates is None:
                 return {'status': ERROR, 'reason': 'SFC UUID not found!'}
 
         except KeyError:
@@ -612,15 +737,32 @@ class Core:
 
             vnfd_name = catalog[0]['vnfd_name']
             vnf_pkg_dir = catalog[0]['dir_id']
-            platform = catalog[0]['platform']
+            domain_id = sfp_data.get('domain_id')
+            nfvo_id = sfp_data.get('nfvo_id')
 
-            nfvo_agent = self._get_nfvo_agent_instance(platform)
+            self.validate_sfc_domain_nfvo_vnf_package(catalog[0], domain_id, nfvo_id)
 
-            if platform not in sfc_template:
-                sfc_template[platform] = deepcopy(nfvo_agent.get_sfc_template())
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
-            sfc_template[platform] = nfvo_agent.compose_sfp(sfc_template[platform], vnfd_name, vnf_pkg_dir,
-                                                            database, cp_out)
+            index = None
+            for segment in range(len(sfc_segment_templates)):
+                if sfc_segment_templates[segment]['domain_id'] == domain_id \
+                        and sfc_segment_templates[segment]['nfvo_id'] == nfvo_id:
+                    index = segment
+                    break
+
+            if index is None:
+                segment_data = {
+                    'domain_id': domain_id,
+                    'nfvo_id': nfvo_id,
+                    'sfc_template': deepcopy(nfvo_agent.get_sfc_template())
+                }
+                index = len(sfc_segment_templates)
+                sfc_segment_templates.append(segment_data)
+
+            sfc_segment_templates[index]['sfc_template'] = \
+                nfvo_agent.compose_sfp(sfc_segment_templates[index]['sfc_template'],
+                                       vnfd_name, vnf_pkg_dir, database, cp_out)
 
         except IndexError:
             return {'status': ERROR, 'reason': 'VNF Package %s not found!' % vnf_pkg_id}
@@ -636,14 +778,34 @@ class Core:
 
         # debug
         logger.debug('SFC Template UUID: %s\n%s', sfp_data['sfc_uuid'],
-                    nfvo_agent.dump_sfc_descriptor(sfc_template[platform]))
+                     nfvo_agent.dump_sfc_descriptor(sfc_segment_templates[index]['sfc_template']))
 
-        self.cache.set(sfp_data['sfc_uuid'], sfc_template)
+        self.cache.set(sfp_data['sfc_uuid'], sfc_segment_templates)
 
         return {'status': OK}
 
+    def get_sfc_traffic_origin(self, sfc_uuid):
+        """Retrieves fields and eligible VNF information for traffic incoming of the first SFC segment"""
+
+        sfc_segments = self.cache.get(sfc_uuid)
+        if sfc_segments is None:
+            return {'status': ERROR, 'reason': 'SFC UUID not found!'}
+
+        domain_id = sfc_segments[0]['domain_id']
+        nfvo_id = sfc_segments[0]['nfvo_id']
+
+        nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
+
+        fields, src_vnfs = nfvo_agent.get_sfc_traffic_origin(self)
+
+        return {
+            'status': OK,
+            'fields': fields,
+            'vnfs': src_vnfs
+        }
+
     def include_classifier_policy(self, policy_data):
-        """Includes ACL criteria according to INTERNAL or EXTERNAL traffic source
+        """Includes ACL criteria according to INTERNAL or EXTERNAL traffic source in the first SFC segment
 
         INTERNAL traffic is sourced from VNFs managed by NFVO, while EXTERNAL traffic is sourced from everything
         out from NFVO networks.
@@ -670,13 +832,12 @@ class Core:
         except KeyError:
             return {'status': ERROR, 'reason': 'SFC UUID must be informed!'}
 
-        if 'platform' not in policy_data:
-            return {'status': OPTIONS, 'platforms': [*sfc_template]}
-
-        platform = policy_data['platform']
+        # gets the domain_id and nfvo_id from the first segment
+        domain_id = sfc_template[0]['domain_id']
+        nfvo_id = sfc_template[0]['nfvo_id']
 
         try:
-            nfvo_agent = self._get_nfvo_agent_instance(platform)
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
         except MultiSFCException as e:
             return {'status': ERROR, 'reason': str(e)}
 
@@ -686,42 +847,42 @@ class Core:
         # resource means the CP_out
         cp_out = policy_data.get('resource')
 
+        # getting the VNF Package information from src_id
+        vnf = database.list_vnf_instances(vnf_id=src_id)
         try:
-            if platform == TACKER_NFVO:
-                vnf = database.list_vnf_instances(vnf_id=src_id)
-                if not vnf:
-                    raise MultiSFCException("VNF Instance not found in database.")
-                vnfp = database.list_catalog(vnf_pkg_id=vnf[0]['vnf_pkg_id'])
+            vnfp = database.list_catalog(vnf_pkg_id=vnf[0]['vnf_pkg_id'])[0]
+        except (IndexError, KeyError):
+            try:
+                vnfp = database.list_catalog(vnf_pkg_id=src_id)[0]
+            except IndexError:
+                vnfp = None
 
-            else:  # here only remained the OSM_NFVO which was validated by the above code
-                vnfp = database.list_catalog(vnf_pkg_id=src_id)
+        try:
+            self.validate_sfc_domain_nfvo_vnf_package(vnfp, domain_id, nfvo_id)
 
-            vnfp_platform = vnfp[0]['platform']
+            sfc_template[0]['sfc_template'] = nfvo_agent.configure_traffic_src_policy(
+                sfc_template[0]['sfc_template'], origin, src_id, cp_out, database)
 
-            if vnfp_platform != platform and origin == INTERNAL:
-                raise NFVOAgentsException(ERROR, "Choose a VNF from '%s' platform!" % platform)
-
-            sfc_template[platform] = nfvo_agent.configure_traffic_src_policy(
-                                            sfc_template[platform], origin, src_id, cp_out, database)
         except NFVOAgentOptions as op:
             return {'status': op.status, 'cp_list': op.cp_list}
         except (NFVOAgentsException, DatabaseException) as e:
             return {'status': e.status, 'reason': e.reason}
+        except MultiSFCException as e:
+            return {'status': ERROR, 'reason': str(e)}
 
         # debug
         logger.debug('SFC Template UUID: %s\n%s', policy_data['sfc_uuid'],
-                    nfvo_agent.dump_sfc_descriptor(sfc_template[platform]))
+                     nfvo_agent.dump_sfc_descriptor(sfc_template[0]['sfc_template']))
 
         self.cache.set(policy_data['sfc_uuid'], sfc_template)
 
         return {'status': OK}
 
     def configure_policies(self, policy_data):
-        """Includes ACL criteria in SFC
+        """Includes ACL criteria on the first SFC segment
 
         JSON arguments are:
             - sfc_uuid: the unique identifier of the SFC being composed
-            - platform: the NFVO platform to configure policies
             - acl: a dict containing the acl criteria to be added into the SFC template
 
         :return: OK if success, or ERROR and its reason if not
@@ -737,11 +898,14 @@ class Core:
 
         acl = policy_data['acl']
 
-        platform = policy_data['platform']
-        try:
-            nfvo_agent = self._get_nfvo_agent_instance(platform)
+        # configuring policies of SFC incoming traffic
+        domain_id = sfc_template[0]['domain_id']
+        nfvo_id = sfc_template[0]['nfvo_id']
 
-            sfc_template[platform] = nfvo_agent.configure_policies(sfc_template[platform], acl)
+        try:
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
+
+            sfc_template[0]['sfc_template'] = nfvo_agent.configure_policies(sfc_template[0]['sfc_template'], acl)
 
         except NFVOAgentsException as e:
             return {'status': e.status, 'reason': e.reason}
@@ -750,7 +914,7 @@ class Core:
 
         # debug
         logger.debug('SFC Template UUID: %s\n%s', request.json['sfc_uuid'],
-                     nfvo_agent.dump_sfc_descriptor(sfc_template[platform]))
+                     nfvo_agent.dump_sfc_descriptor(sfc_template[0]['sfc_template']))
 
         self.cache.set(policy_data['sfc_uuid'], sfc_template)
 
@@ -768,27 +932,28 @@ class Core:
 
         :return: OK if all succeed, or ERROR and its reason
         """
-
+        # TODO need to store each segment information at sfc_instances collection in database
         try:
-            sfc_template = self.cache.get(sfc_data['sfc_uuid'])
-            if not sfc_template:
+            sfc_segments = self.cache.get(sfc_data['sfc_uuid'])
+            if not sfc_segments:
                 return {'status': ERROR, 'reason': 'SFC UUID not found!'}
 
         except KeyError:
             return {'status': ERROR, 'reason': 'SFC UUID must be informed!'}
 
-        platforms = [*sfc_template]
         sfc_name = sfc_data.get('sfc_name')
         if sfc_name:
             sfc_name = sfc_name.replace(' ', '')
         else:
             sfc_name = unique_id()
 
-        for platform in platforms:
+        for segment in sfc_segments:
+            domain_id = segment['domain_id']
+            nfvo_id = segment['nfvo_id']
             try:
-                nfvo_agent = self._get_nfvo_agent_instance(platform)
+                nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
-                sfc = nfvo_agent.create_sfc(sfc_template[platform], database, self, sfc_data['sfc_uuid'], sfc_name)
+                sfc = nfvo_agent.create_sfc(segment['sfc_template'], database, self, sfc_data['sfc_uuid'], sfc_name)
 
             except (NFVOAgentsException, DatabaseException) as ex:
                 return {'status': ex.status, 'reason': ex.reason}
@@ -797,7 +962,8 @@ class Core:
 
             # Rollback in case of error on inserting in database
             try:
-                database.insert_sfc_instance(sfc['vnf_instances'], sfc['nsd_id'], sfc['ns_id'], sfc_name, platform)
+                database.insert_sfc_instance(sfc['vnf_instances'], sfc['nsd_id'], sfc['ns_id'],
+                                             sfc_name, domain_id, nfvo_id)
             # Rollback actions
             except DatabaseException as dbe:
                 # this function raises an NFVOAgentsException and don't need to be caught,
@@ -822,13 +988,16 @@ class Core:
         :param sfc_id: the NFVO unique identifier of the SFC
         :return: OK if succeed, or ERROR and its reason if not
         """
-
+        # TODO destroying all segments of a multi-sfc not implemented yet
         try:
             sfc = database.list_sfc_instances(ns_id=sfc_id)
             if not sfc:
                 raise MultiSFCException("SFC id %s cannot be destroyed. Not found in database." % sfc_id)
 
-            nfvo_agent = self._get_nfvo_agent_instance(sfc[0]['platform'])
+            domain_id = sfc[0]['domain_id']
+            nfvo_id = sfc[0]['nfvo_id']
+
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
             nfvo_agent.destroy_sfc(sfc_id, self)
 
@@ -853,6 +1022,9 @@ class Core:
 
                 try:
                     sfcs = nfvo_agent.list_sfcs()
+                    for sfc in sfcs:
+                        sfc['domain_name'] = domain['name']
+                        sfc['nfvo_name'] = nfvo['name']
                     data.extend(sfcs)
 
                 except NFVOAgentsException as e:

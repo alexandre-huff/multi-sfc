@@ -26,10 +26,12 @@ logger = logging.getLogger('tacker_agent')
 class TackerAgent(implements(NFVOAgents)):
     """Implementation of the Tacker Agent."""
 
-    def __init__(self, host, username, password, tenant_name, vim_name, nfvo_name, domain_name):
+    def __init__(self, host, username, password, tenant_name, vim_name, domain_id, domain_name, nfvo_id, nfvo_name):
         self.vim_name = vim_name
         self.nfvo_name = nfvo_name
         self.domain_name = domain_name
+        self.domain_id = domain_id
+        self.nfvo_id = nfvo_id
 
         self.identity = IdentityManager(host, username, password, tenant_name)
         token = self.identity.get_token()
@@ -950,6 +952,33 @@ class TackerAgent(implements(NFVOAgents)):
 
         raise NFVOAgentsException(ERROR, 'VNF Resource ID not found!')
 
+    def get_sfc_traffic_origin(self, core):
+        # fields defines which information should be shown dynamically by client applications
+        fields = [
+            {'id': 'ID'},
+            {'name': 'Name'},
+            {'instance': 'Instance Name'},
+            {'address': 'Mgmt Address'},
+            {'status': 'Status'},
+            {'platform': 'Platform'}
+        ]
+
+        vnfs = self.list_vnfs()
+
+        src_vnfs = []
+        for vnf in vnfs:
+                src_vnf = {
+                    'id': vnf.get('vnf_id'),
+                    'name': vnf.get('vnf_name'),
+                    'instance': vnf.get('instance_name'),
+                    'address': vnf.get('mgmt_url'),
+                    'status': vnf.get('vnf_status'),
+                    'platform': TACKER_NFVO
+                }
+                src_vnfs.append(src_vnf)
+
+        return fields, src_vnfs
+
     def configure_traffic_src_policy(self, sfc_descriptor, origin, src_id, cp_out, database):
         """
         Includes ACL criteria according to INTERNAL or EXTERNAL traffic source
@@ -1088,8 +1117,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
 
-        criteria = topology_template['node_templates']['Forwarding_path1'] \
-            ['properties']['policy']['criteria']
+        criteria = topology_template['node_templates']['Forwarding_path1']['properties']['policy']['criteria']
 
         acl = self.acl_criteria_parser(acl)
 
@@ -1187,8 +1215,8 @@ class TackerAgent(implements(NFVOAgents)):
         vnf_instance_list = []
         vnf_mapping = {}
 
-        constituent_vnfs = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template'] \
-            ['groups']['VNFFG1']['properties']['constituent_vnfs']
+        constituent_vnfs = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template'][
+            'groups']['VNFFG1']['properties']['constituent_vnfs']
         # configuring VNFFGD unique name
         sfc_descriptor['vnffgd']['name'] = sfc_name
 
@@ -1198,7 +1226,12 @@ class TackerAgent(implements(NFVOAgents)):
             data = database.list_catalog(vnfd_name=vnfd_name)
 
             # Second argument states that the called function is in a subprocess
-            subprocess_pkgs.append([data[0]['_id'], True])
+            vnfp_data = {
+                'vnfp_id': data[0]['_id'],
+                'domain_id': self.domain_id,
+                'nfvo_id': self.nfvo_id
+            }
+            subprocess_pkgs.append([vnfp_data, True])
 
         processes = Pool(len(subprocess_pkgs))
 

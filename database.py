@@ -87,15 +87,33 @@ class DatabaseConnection:
             raise DatabaseException(ERROR, str(e))
 
     def list_catalog(self, vnf_pkg_id=None, category=None, vnfd_name=None,
-                     dir_id=None, domain_id=None, nfvo_id=None, platform=None):
+                     dir_id=None, domain_id=None, nfvo_id=None, platform=None, criteria=None):
         """
         Retrieves a list of VNF Packages stored in database.
+
+        Params are used to create "AND" queries.
+        In order to user "OR" queries, use the criteria argument like this:
+        { "$or": [{"domain_id": "domain1"}, {"domain_id": "ANY"}] }
+        Another way to get an "OR" behavior is to use the "$in" with the arguments like this:
+        domain_id={"$in": [value1, value2]}
+
+        :param vnf_pkg_id:
+        :param category:
+        :param vnfd_name:
+        :param dir_id:
+        :param domain_id:
+        :param nfvo_id:
+        :param platform:
+        :param criteria: must be a dict
+
+        :return: a list of vnf packages
 
         Raises
         -----
             DatabaseException
         """
-        criteria = {}
+        if not isinstance(criteria, dict):
+            criteria = {}
         if vnf_pkg_id:
             criteria['_id'] = ObjectId(vnf_pkg_id)
         if category:
@@ -219,14 +237,15 @@ class DatabaseConnection:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
 
-    def insert_sfc_instance(self, vnf_instances, nsd_id, ns_id, ns_name, platform):
+    def insert_sfc_instance(self, vnf_instances, nsd_id, ns_id, ns_name, domain_id, nfvo_id):
         """Inserts data in SFC_Instances collection in MongoDB
 
         :param vnf_instances: a list or dict with all vnf_instance_id stored in MongoDB
         :param nsd_id: SFC Descriptor ID (NVFO VNFFGD ID or NSD ID)
         :param ns_id: SFC Instance ID (NFVO VNFFG or NS ID)
         :param ns_name: Name of the SFC Instance
-        :param platform: The platform which runs this SFC
+        :param domain_id: The domain ID on which the SFC is running
+        :param nfvo_id: The nfvo ID on which the SFC is running
 
         Raises
         ------
@@ -238,7 +257,8 @@ class DatabaseConnection:
                         'nsd_id': nsd_id,
                         'ns_id': ns_id,
                         'ns_name': ns_name,
-                        'platform': platform
+                        'domain_id': domain_id,
+                        'nfvo_id': nfvo_id
                         })
             if not data.inserted_id:
                 raise MultiSFCException("SFC Instance not inserted in database!")
@@ -267,8 +287,8 @@ class DatabaseConnection:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
 
-    def list_sfc_instances(self, sfc_instance_id=None, vnf_instances=None,
-                           nsd_id=None, ns_id=None, ns_name=None, platform=None):
+    def list_sfc_instances(self, sfc_instance_id=None, vnf_instances=None, nsd_id=None,
+                           ns_id=None, ns_name=None, domain_id=None, nfvo_id=None):
         """Returns a list of SFC Instances stored in MongoDB
 
         The function arguments are used to create the search criteria for the MongoDB.
@@ -279,7 +299,8 @@ class DatabaseConnection:
         :param nsd_id: an NSD id or a VNFFGD id (NFVO id)
         :param ns_id: an NS id or a VNFFG id (NFVO id)
         :param ns_name:
-        :param platform:
+        :param domain_id:
+        :param nfvo_id:
         :return: A list of SFC Instances stored in database
 
         Raises
@@ -297,8 +318,10 @@ class DatabaseConnection:
             criteria['ns_id'] = ns_id
         if ns_name:
             criteria['ns_name'] = ns_name
-        if platform:
-            criteria['platform'] = platform
+        if domain_id:
+            criteria['domain_id'] = domain_id
+        if nfvo_id:
+            criteria['nfvo_id'] = nfvo_id
 
         try:
             sfc_instances = self.db.sfc_instances.find(criteria)

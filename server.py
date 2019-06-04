@@ -27,9 +27,19 @@ app = Flask(__name__)
 core = Core()
 
 
-@app.route('/catalog', methods=['GET'])
+@app.route('/catalog/vnfs', methods=['GET'])
 def list_catalog():
     return jsonify(core.list_catalog())
+
+
+@app.route('/catalog/vnfs/<domain_id>/<nfvo_id>', methods=['GET'])
+def list_domain_nfvo_vnfs(domain_id, nfvo_id):
+    return jsonify(core.list_domain_nfvo_vnfs(domain_id, nfvo_id))
+
+
+@app.route('/catalog/domains', methods=['GET'])
+def list_domains():
+    return jsonify(core.get_domain_catalog())
 
 
 @app.route('/package', methods=['POST'])
@@ -63,11 +73,6 @@ def destroy_vnf(vnf_id):
 #
 
 
-@app.route('/sfc/acl/<platform>', methods=['GET'])
-def list_acl(platform):
-    return jsonify(core.get_policies(platform))
-
-
 @app.route('/sfc/uuid', methods=['GET'])
 def get_sfc_uuid():
     return jsonify(core.create_sfc_uuid())
@@ -83,73 +88,19 @@ def compose_sfp():
     return jsonify(core.compose_sfp(request.json))
 
 
-@app.route('/sfc/acl/origin/<platform>', methods=['GET'])
-def get_sfc_traffic_origin(platform):
-    if platform == TACKER_NFVO:
-        # fields defines which information should be shown in client applications
-        fields = [
-            {'id': 'ID'},
-            {'name': 'Name'},
-            {'instance': 'Instance Name'},
-            {'address': 'Mgmt Address'},
-            {'status': 'Status'},
-            {'platform': 'Platform'}
-        ]
-
-        vnfs = core.list_vnfs()
-
-        src_vnfs = []
-        for vnf in vnfs['vnfs']:
-            if vnf.get('platform') == TACKER_NFVO:
-                src_vnf = {
-                    'id': vnf.get('vnf_id'),
-                    'name': vnf.get('vnf_name'),
-                    'instance': vnf.get('instance_name'),
-                    'address': vnf.get('mgmt_url'),
-                    'status': vnf.get('vnf_status'),
-                    'platform': TACKER_NFVO
-                }
-                src_vnfs.append(src_vnf)
-        return jsonify({
-            'status': OK,
-            'fields': fields,
-            'vnfs': src_vnfs
-        })
-
-    elif platform == OSM_NFVO:
-        fields = [
-            {'category': 'VNF Category'},
-            {'description': 'Description'},
-            {'platform': 'Platform'}
-            # {'id': 'ID'}
-        ]
-
-        vnfps = core.list_catalog()
-
-        src_vnfps = []
-        for vnfp in vnfps['vnfs']:
-            if vnfp.get('platform') == OSM_NFVO:
-                src_vnfp = {
-                    'id': vnfp.get('_id'),
-                    'category': vnfp.get('category'),
-                    'description': vnfp.get('description'),
-                    'platform': OSM_NFVO
-                }
-                src_vnfps.append(src_vnfp)
-
-        return jsonify({
-            'status': OK,
-            'fields': fields,
-            'vnfs': src_vnfps
-        })
-
-    else:
-        return jsonify({'status': ERROR, 'reason': 'Platform %s not supported' % platform})
+@app.route('/sfc/acl/origin/<sfc_uuid>', methods=['GET'])
+def get_sfc_traffic_origin(sfc_uuid):
+    return jsonify(core.get_sfc_traffic_origin(sfc_uuid))
 
 
 @app.route('/sfc/acl/origin', methods=['POST'])
 def include_sfc_traffic_origin():
     return jsonify(core.include_classifier_policy(request.json))
+
+
+@app.route('/sfc/acl/<sfc_uuid>', methods=['GET'])
+def list_acl(sfc_uuid):
+    return jsonify(core.get_policies(sfc_uuid))
 
 
 @app.route('/sfc/acl', methods=['POST'])

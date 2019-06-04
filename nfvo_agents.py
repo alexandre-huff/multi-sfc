@@ -27,6 +27,9 @@ class NFVOAgents(Interface):
     def compose_sfp(self, sfc_descriptor, vnfd_name, vnfp_dir, database, options_cp_out):
         pass
 
+    def get_sfc_traffic_origin(self, core):
+        pass
+
     def configure_traffic_src_policy(self, sfc_descriptor, origin, src_id, cp_out, database):
         pass
 

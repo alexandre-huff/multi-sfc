@@ -9,7 +9,7 @@ from time import sleep, time
 from exceptions import NFVOAgentsException
 from nfvo_agents import NFVOAgents
 from interface import implements
-from utils import OSM_NFVO, ERROR, TIMEOUT, INTERNAL
+from utils import OSM_NFVO, ERROR, TIMEOUT, INTERNAL, ANY
 
 from osmclient.sol005 import client as osm
 from osmclient.common.exceptions import NotFound, ClientException
@@ -25,13 +25,15 @@ logger = logging.getLogger('osm_agent')
 class OSMAgent(implements(NFVOAgents)):
     """Implementation of the OSM Agent."""
 
-    def __init__(self, host, username, password, tenant_name, vim_name, nfvo_name, domain_name):
+    def __init__(self, host, username, password, tenant_name, vim_name, domain_id, domain_name, nfvo_id, nfvo_name):
 
         self.client = osm.Client(host=host, user=username, password=password, so_project=tenant_name)
 
         self.vim_name = vim_name
         self.nfvo_name = nfvo_name
         self.domain_name = domain_name
+        self.domain_id = domain_id
+        self.nfvo_id = nfvo_id
 
         self.vim_id = self._get_vim_id()
 
@@ -561,6 +563,36 @@ class OSMAgent(implements(NFVOAgents)):
 
         return sfc_descriptor
 
+    def get_sfc_traffic_origin(self, core):
+        # fields defines which information should be shown dynamically by client applications
+        fields = [
+            {'category': 'VNF Category'},
+            {'description': 'Description'},
+            {'platform': 'Platform'}
+            # {'id': 'ID'}
+        ]
+
+        vnfps = core.list_catalog()
+
+        src_vnfps = []
+        for vnfp in vnfps['vnfs']:
+
+            if vnfp['domain_id'] != ANY and vnfp['domain_id'] != self.domain_id \
+                    or vnfp['nfvo_id'] != ANY and vnfp['nfvo_id'] != self.nfvo_id:
+                continue
+
+            if vnfp['platform'] == OSM_NFVO:
+
+                src_vnfp = {
+                    'id': vnfp.get('_id'),
+                    'category': vnfp.get('category'),
+                    'description': vnfp.get('description'),
+                    'platform': OSM_NFVO
+                }
+                src_vnfps.append(src_vnfp)
+
+        return fields, src_vnfps
+
     def configure_traffic_src_policy(self, sfc_descriptor, origin, src_id, cp_out, database):
         """Includes ACL criteria according to INTERNAL or EXTERNAL traffic source
 
@@ -573,7 +605,7 @@ class OSMAgent(implements(NFVOAgents)):
         :param sfc_descriptor:
         :param origin: INTERNAL or EXTERNAL as in *utils module*
         :param src_id: the VNF Package ID of the VNF which generates de SFC incoming traffic
-        :param cp_out:
+        :param cp_out: not user by OSM Agent
         :param database:
         :return: the NSD being composed
 
