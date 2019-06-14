@@ -113,9 +113,9 @@ def create_sfc():
     return jsonify(core.create_sfc(request.json))
 
 
-@app.route('/sfc/<sfc_id>', methods=['DELETE'])
-def destroy_sfc(sfc_id):
-    return jsonify(core.destroy_sfc(sfc_id))
+@app.route('/sfc/<multi_sfc_id>', methods=['DELETE'])
+def destroy_sfc(multi_sfc_id):
+    return jsonify(core.destroy_sfc(multi_sfc_id))
 
 
 @app.route('/sfc', methods=['GET'])

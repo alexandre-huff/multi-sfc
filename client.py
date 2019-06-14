@@ -436,13 +436,13 @@ def list_vnfs():
     vnfs = response['vnfs']
 
     if vnfs:
-        table = PrettyTable(["SEQ", "VNF Name", "Instance Name", "Mgmt Address", "Status", "Platform",
+        table = PrettyTable(["SEQ", "VNF ID", "Instance Name", "Mgmt Address", "Status", "Platform",
                              "Domain", "Platform Instance", "Platform VIM"])
 
         index = 0
         for vnf in vnfs:
             index += 1
-            row = [index, vnf['vnf_name'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform'],
+            row = [index, vnf['vnf_id'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform'],
                    vnf['domain_name'], vnf['nfvo_name'], vnf['vim_name']]
             table.add_row(row)
 
@@ -542,6 +542,7 @@ def create_sfc():
             op = int(input("> "))
             if op not in (-1, 1, 2):
                 print("Invalid option!")
+                continue
             break
 
         if op == -1:
@@ -705,14 +706,14 @@ def list_sfcs():
 
     sfcs = response['sfcs']
     if sfcs:
-        table = PrettyTable(["SEQ", "SFC Name", "Status", "Domain", "Platform",
+        table = PrettyTable(["SEQ", "Multi-SFC", "Segment Name", "Status", "Domain", "Platform",
                              "Platform Instance", "Service Function Path", "Policy"])
 
         index = 0
         for sfc in sfcs:
             index += 1
-            row = [index, sfc['name'], sfc['status'], sfc['domain_name'], sfc['platform'],
-                   sfc['nfvo_name'], ' -> '.join(sfc['vnf_chain']), yaml.safe_dump(sfc['policy'])]
+            row = [index, sfc['multi_sfc_id'], sfc['name'], sfc['status'], sfc['domain_name'], sfc['platform'],
+                   sfc['nfvo_name'], '\n'.join(sfc['vnf_chain']) + '\n', yaml.safe_dump(sfc['policy'])]
             table.add_row(row)
 
         print(table)
@@ -727,13 +728,13 @@ def destroy_sfc():
     if not sfcs:
         return
 
-    print("Choose a SFC to destroy or 0 to exit.")
+    print("Choose a Multi-SFC to destroy or 0 to exit.")
     seq = int(input("SEQ > "))
     if seq <= 0:
         return
 
     try:
-        vnffg_id = sfcs[seq - 1]['id']
+        vnffg_id = sfcs[seq - 1]['multi_sfc_id']
     except IndexError:
         print("Invalid SEQ number!")
         return

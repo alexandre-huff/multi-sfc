@@ -239,6 +239,15 @@ class OSMAgent(implements(NFVOAgents)):
         except ClientException as e:
             raise NFVOAgentsException(ERROR, str(e))
 
+    def show_vnf(self, vnf_id):
+        try:
+            vnf = self.client.vnf.get(vnf_id)
+
+        except NotFound:
+            vnf = {}
+
+        return vnf
+
     def list_sfcs(self):
         """Retrieves a list of NS"""
         try:
@@ -258,14 +267,15 @@ class OSMAgent(implements(NFVOAgents)):
 
             # desc = ns['instantiate_params']['nsDescription']
             sfp = ns['constituent-vnfr-ref']
+
             # removing the first VNF ​​because it generates the SFC's incoming traffic in OSM
-            sfp.pop(0)
+            # sfp.pop(0)
 
             # If the instantiated NS is just a VNF (not SFC), then constituent-vnfr-ref had just one element
             # Realize that an SFC NS has in OSM at least two VNFs in constituent-vnfr-ref
             # So, by removing the first VNF we can conclude that if sfp is empty, then this NS
             # is just a VNF, not an SFC.
-            if sfp:
+            if len(sfp) > 1:
                 policy = ns['nsd']['vnffgd'][0]['classifier'][0]['match-attributes'][0]
                 policy.pop('id')
 
@@ -400,6 +410,20 @@ class OSMAgent(implements(NFVOAgents)):
         template = yaml.safe_load(template)
         return template
 
+    def get_configured_policies(self, sfc_descriptor):
+        """Retrieves the configures policies in the sfc descriptor
+
+        :return: a list containing key:value elements
+        """
+
+        criteria = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['classifier'][0]['match-attributes'][0]
+
+        items = []
+        for item in criteria:
+            items.append({item: criteria[item]})
+
+        return items
+
     def add_constituent_vnf_and_virtual_link(self, sfc_descriptor, vnfd_name, vnf_nsd, input_vnf=False):
         """Adds VNF and its VL to the NSD
 
@@ -430,7 +454,11 @@ class OSMAgent(implements(NFVOAgents)):
         # the first member must be reserved for the VNF which generates the input SFC traffic
         vnf_id_ref = vnf_nsd['constituent-vnfd'][0]['vnfd-id-ref']
         if not input_vnf:
-            member_vnf_index = len(constituent_vnfd) + 2
+            if len(constituent_vnfd) == 0:
+                member_vnf_index = 2
+            else:
+                member_vnf_index = constituent_vnfd[-1]['member-vnf-index'] + 1
+
             constituent_vnfd.append({'member-vnf-index': member_vnf_index, 'vnfd-id-ref': vnf_id_ref})
         else:
             member_vnf_index = 1
@@ -520,8 +548,10 @@ class OSMAgent(implements(NFVOAgents)):
             sfc_sfp = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['rsp'][0]['vnfd-connection-point-ref']
 
         # Adding VNFs in RSP. Here the SFC composition happens auto-magically
+        mgmt_network = False
         for nsd_vl in vnf_nsd.get('vld'):
 
+            # Important: The management network of the VNF Package's NSD shall contain the 'mgmt-network'
             if not nsd_vl.get('mgmt-network'):
 
                 # NSD of a single VNF has just one CP in a VL
@@ -555,11 +585,15 @@ class OSMAgent(implements(NFVOAgents)):
                         vnffgd_cp_ref['order'] = previous_vnfd_cp.get('order') + 1
                         sfc_sfp.append(vnffgd_cp_ref)
 
+            else:
+                mgmt_network = True
+
+        if mgmt_network is False:
+            logger.warning("NS Descriptor '%s' does not have a management network (mgmt-network)", vnf_nsd['name'])
+
         # Checks whether the current VNF was added on the SFC composition
         if sfc_sfp[-1]['vnfd-id-ref'] != vnf_id_ref:
             raise NFVOAgentsException(ERROR, "There is no suitable CP for chaining with the previous VNF!")
-
-        # logger.info("\n%s", yaml.dump(sfc_descriptor))
 
         return sfc_descriptor
 
@@ -685,6 +719,7 @@ class OSMAgent(implements(NFVOAgents)):
         :param database:
         :param core:
         :param sfc_uuid:
+        :param sfc_name
         :return: a dict containing:
 
             - a list of *vnf_instances* of the created SFC

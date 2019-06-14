@@ -290,7 +290,7 @@ class TackerAgent(implements(NFVOAgents)):
             # in case of error on deleting VNFD
             except NFVOAgentsException as ex:
                 logger.error(ex.reason)
-                e.reason = ''.join([e.reason, ' ', ex.reason])
+                e.reason = ' '.join([e.reason, ex.reason])
 
             raise NFVOAgentsException(e.status, e.reason)
 
@@ -309,8 +309,8 @@ class TackerAgent(implements(NFVOAgents)):
 
         return {
             'vnfd_id': vnfd_id,
-            'vnf_id' : vnf_id,
-            'vnf_ip' : vnf_ip
+            'vnf_id': vnf_id,
+            'vnf_ip': vnf_ip
         }
 
     def destroy_vnf(self, vnf_id):
@@ -436,22 +436,24 @@ class TackerAgent(implements(NFVOAgents)):
             NFVOAgentsException
         """
         response = self.tacker.vnf_show(vnf_id)
-        if response.status_code != 200:
+        if response.status_code not in (200, 404):
             raise NFVOAgentsException(ERROR, status[response.status_code])
 
-        response = response.json()['vnf']
-
         vnf = {}
-        for k, v in iter(response.items()):
-            if k in ('id', 'name', 'status', 'vnfd_id', 'error_reason', 'description', 'instance_id'):
-                vnf[k] = v
-        mgmt_url = json.loads(response['mgmt_url'])['VDU1']
-        instance = response['attributes']['heat_template']
-        instance = yaml.load(instance)
-        instance_name = instance['resources']['VDU1']['properties']['name']
 
-        vnf['mgmt_url'] = mgmt_url
-        vnf['instance_name'] = instance_name
+        if response.status_code == 200:
+            response = response.json()['vnf']
+
+            for k, v in iter(response.items()):
+                if k in ('id', 'name', 'status', 'vnfd_id', 'error_reason', 'description', 'instance_id'):
+                    vnf[k] = v
+            mgmt_url = json.loads(response['mgmt_url'])['VDU1']
+            instance = response['attributes']['heat_template']
+            instance = yaml.full_load(instance)
+            instance_name = instance['resources']['VDU1']['properties']['name']
+
+            vnf['mgmt_url'] = mgmt_url
+            vnf['instance_name'] = instance_name
 
         return vnf
 
@@ -516,6 +518,7 @@ class TackerAgent(implements(NFVOAgents)):
         response = self.tacker.vnffgd_delete(vnffgd_id)
 
         if response.status_code != 204:
+            logger.error(status[response.status_code])
             raise NFVOAgentsException(ERROR, status[response.status_code])
 
         logger.info("VNFFGD %s removed successfully!", vnffgd_id)
@@ -581,6 +584,7 @@ class TackerAgent(implements(NFVOAgents)):
         response = self.tacker.vnffg_delete(vnffg_id)
 
         if response.status_code != 204:
+            logger.error(status[response.status_code])
             raise NFVOAgentsException(ERROR, status[response.status_code])
 
         logger.info("VNFFG %s destroyed successfully!", vnffg_id)
@@ -787,6 +791,17 @@ class TackerAgent(implements(NFVOAgents)):
                 }
             }
         }
+
+    def get_configured_policies(self, sfc_descriptor):
+        """Retrieves the configures policies in the sfc descriptor
+
+        :return: a list containing key:value elements
+        """
+
+        topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
+        criteria = topology_template['node_templates']['Forwarding_path1']['properties']['policy']['criteria']
+
+        return criteria
 
     def list_vnf_pkg_cps(self, vnfp_dir):
         """Retrieve all connection points of a VNF Package stored in repository
@@ -1142,13 +1157,13 @@ class TackerAgent(implements(NFVOAgents)):
 
         last_path_id = 0
         for item in data:
-            path_id = item['template']['vnffgd']['topology_template'] \
-                ['node_templates']['Forwarding_path1']['properties']['id']
+            path_id = item['template']['vnffgd']['topology_template'][
+                'node_templates']['Forwarding_path1']['properties']['id']
             if path_id > last_path_id:
                 last_path_id = path_id
 
-        vnffgd['vnffgd']['template']['vnffgd']['topology_template'] \
-            ['node_templates']['Forwarding_path1']['properties']['id'] = last_path_id + 1
+        vnffgd['vnffgd']['template']['vnffgd']['topology_template'][
+            'node_templates']['Forwarding_path1']['properties']['id'] = last_path_id + 1
 
         return vnffgd
 
@@ -1189,6 +1204,7 @@ class TackerAgent(implements(NFVOAgents)):
         :param database:
         :param core:
         :param sfc_uuid: the unique identifier of the composed SFC to be started
+        :param sfc_name: the name of the SFC being instantiated (optional)
 
         :return: a dict containing:
 
@@ -1295,18 +1311,6 @@ class TackerAgent(implements(NFVOAgents)):
             'nsd_id': vnffgd_id,
             'ns_id': vnffg_id
         }
-        # try:
-        #     database.insert_sfc_instance(vnf_instance_list, vnffgd_id, vnffg_id, TACKER_NFVO)
-        #
-        # # Rollback actions
-        # except DatabaseException as dbe:
-        #     # this function raises an NFVOAgentsException and don't need to be caught,
-        #     # either way, the code after it won't run
-        #     self.destroy_vnffg(vnffg_id)
-        #
-        #     message = self.sfc_rollback_actions(vnf_instance_list, core, vnffgd_id)
-        #     message = ' '.join([dbe.reason, message])
-        #     raise NFVOAgentsException(dbe.status, message)
 
     def destroy_sfc(self, sfc_id, core):
         """Destroy the VNFFG and its VNFs
@@ -1337,7 +1341,7 @@ class TackerAgent(implements(NFVOAgents)):
         # destroying VNFFG
         self.destroy_vnffg(sfc_id)
 
-        # TODO: How many time should we wait before remove the VNFFGD?
+        # How many time should we wait before remove the VNFFGD?
         time.sleep(2)
 
         # destroying VNFFGD
@@ -1355,4 +1359,4 @@ class TackerAgent(implements(NFVOAgents)):
             raise NFVOAgentsException(ERROR, message)
 
     def dump_sfc_descriptor(self, sfc_descriptor):
-        return json.dumps(sfc_descriptor, indent=4, sort_keys=True)
+        return json.dumps(sfc_descriptor, indent=2, sort_keys=True)

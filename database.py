@@ -43,7 +43,8 @@ class DatabaseConnection:
 
         self.db = self.client.multisfc
 
-    def insert_vnf_package(self, category, vnfd_name, dir_id, vnf_type, domain_id, nfvo_id, platform, description):
+    def insert_vnf_package(self, category, vnfd_name, dir_id, vnf_type, domain_id, nfvo_id,
+                           platform, description, tunnel):
         """
         Raises
         ------
@@ -58,7 +59,8 @@ class DatabaseConnection:
                 'domain_id': domain_id,
                 'nfvo_id': nfvo_id,
                 'platform': platform,
-                'description': description
+                'description': description,
+                'tunnel': tunnel
                 })
             if not res.inserted_id:
                 raise MultiSFCException('Failed on inserting this VNF Package in database.')
@@ -86,8 +88,8 @@ class DatabaseConnection:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
 
-    def list_catalog(self, vnf_pkg_id=None, category=None, vnfd_name=None,
-                     dir_id=None, domain_id=None, nfvo_id=None, platform=None, criteria=None):
+    def list_catalog(self, vnf_pkg_id=None, category=None, vnfd_name=None, dir_id=None, domain_id=None,
+                     nfvo_id=None, platform=None, tunnel=None, criteria=None):
         """
         Retrieves a list of VNF Packages stored in database.
 
@@ -104,6 +106,7 @@ class DatabaseConnection:
         :param domain_id:
         :param nfvo_id:
         :param platform:
+        :param tunnel:
         :param criteria: must be a dict
 
         :return: a list of vnf packages
@@ -128,6 +131,8 @@ class DatabaseConnection:
             criteria['nfvo_id'] = nfvo_id
         if platform:
             criteria['platform'] = platform
+        if tunnel:
+            criteria['tunnel'] = tunnel
 
         try:
             catalog = self.db.catalog.find(criteria)
@@ -237,15 +242,19 @@ class DatabaseConnection:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
 
-    def insert_sfc_instance(self, vnf_instances, nsd_id, ns_id, ns_name, domain_id, nfvo_id):
+    def insert_sfc_instance(self, sfc_name, multi_sfc_id, vnf_instances, nsd_id, ns_id, segment_name,
+                            domain_id, nfvo_id):
         """Inserts data in SFC_Instances collection in MongoDB
 
+        :param sfc_name: Name of the SFC
+        :param multi_sfc_id: a multi-sfc unique identifier of all composed segments
         :param vnf_instances: a list or dict with all vnf_instance_id stored in MongoDB
         :param nsd_id: SFC Descriptor ID (NVFO VNFFGD ID or NSD ID)
         :param ns_id: SFC Instance ID (NFVO VNFFG or NS ID)
-        :param ns_name: Name of the SFC Instance
+        :param segment_name: Name of the SFC Segment
         :param domain_id: The domain ID on which the SFC is running
         :param nfvo_id: The nfvo ID on which the SFC is running
+        :return: the id of the inserted SFC
 
         Raises
         ------
@@ -253,12 +262,14 @@ class DatabaseConnection:
         """
         try:
             data = self.db.sfc_instances.insert_one({
-                        'vnf_instances': vnf_instances,
-                        'nsd_id': nsd_id,
-                        'ns_id': ns_id,
-                        'ns_name': ns_name,
-                        'domain_id': domain_id,
-                        'nfvo_id': nfvo_id
+                'sfc_name': sfc_name,
+                'multi_sfc_id': multi_sfc_id,
+                'vnf_instances': vnf_instances,
+                'nsd_id': nsd_id,
+                'ns_id': ns_id,
+                'segment_name': segment_name,
+                'domain_id': domain_id,
+                'nfvo_id': nfvo_id
                         })
             if not data.inserted_id:
                 raise MultiSFCException("SFC Instance not inserted in database!")
@@ -266,6 +277,8 @@ class DatabaseConnection:
         except Exception as e:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
+
+        return str(data.inserted_id)
 
     def remove_sfc_instance(self, sfc_instance_id):
         """Removes a VNF Instance from the database
@@ -287,18 +300,20 @@ class DatabaseConnection:
             logger.error(e)
             raise DatabaseException(ERROR, str(e))
 
-    def list_sfc_instances(self, sfc_instance_id=None, vnf_instances=None, nsd_id=None,
-                           ns_id=None, ns_name=None, domain_id=None, nfvo_id=None):
+    def list_sfc_instances(self, sfc_instance_id=None, sfc_name=None, multi_sfc_id=None, vnf_instances=None,
+                           nsd_id=None, ns_id=None, segment_name=None, domain_id=None, nfvo_id=None):
         """Returns a list of SFC Instances stored in MongoDB
 
         The function arguments are used to create the search criteria for the MongoDB.
         To get all SFC Instances stored in database just call this function without arguments.
 
         :param sfc_instance_id: the unique identifier generated by mongodb
-        :param vnf_instances: a list of VNF Instances
-        :param nsd_id: an NSD id or a VNFFGD id (NFVO id)
-        :param ns_id: an NS id or a VNFFG id (NFVO id)
-        :param ns_name:
+        :param sfc_name:
+        :param multi_sfc_id: the unique identifier of the multi-sfc instances
+        :param vnf_instances: a list of vnfs
+        :param nsd_id:
+        :param ns_id:
+        :param segment_name:
         :param domain_id:
         :param nfvo_id:
         :return: A list of SFC Instances stored in database
@@ -310,14 +325,18 @@ class DatabaseConnection:
         criteria = {}
         if sfc_instance_id:
             criteria['_id'] = ObjectId(sfc_instance_id)
+        if sfc_name:
+            criteria['sfc_name'] = sfc_name
+        if multi_sfc_id:
+            criteria['multi_sfc_id'] = multi_sfc_id
+        if segment_name:
+            criteria['segment_name'] = segment_name
         if vnf_instances:
             criteria['vnf_instances'] = vnf_instances
         if nsd_id:
             criteria['nsd_id'] = nsd_id
         if ns_id:
             criteria['ns_id'] = ns_id
-        if ns_name:
-            criteria['ns_name'] = ns_name
         if domain_id:
             criteria['domain_id'] = domain_id
         if nfvo_id:
@@ -341,9 +360,12 @@ class DatabaseConnection:
 if __name__ == '__main__':
     import sys
 
-    # Used to clean VNF_Instances and SFC_Instances performance tests database data
+    # Used to clean VNF_Instances, SFC_Instances, and SFC_Segments performance tests database data
     if len(sys.argv) == 2 and sys.argv[1] == 'clean':
         database = DatabaseConnection()
+
+        result = database.db.sfc_segments.delete_many({})
+        print('Removed %s SFC_Segments from database.' % result.deleted_count)
 
         result = database.db.sfc_instances.delete_many({})
         print('Removed %s SFC_Instances from database.' % result.deleted_count)

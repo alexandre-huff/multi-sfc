@@ -2,6 +2,8 @@
 
 import logging
 import json
+from builtins import AttributeError
+
 import yaml
 import os
 import time
@@ -180,6 +182,7 @@ class Core:
         vnf_type = descriptor['type']
         platform = descriptor['platform']
         vnf_description = descriptor['description']
+        tunnel_type = descriptor.get('tunnel')
         domain_id = vnfp_data.get('domain_id')
         nfvo_id = vnfp_data.get('nfvo_id')
 
@@ -254,7 +257,7 @@ class Core:
 
         try:
             database.insert_vnf_package(category, vnfd_name, dir_id, vnf_type, domain_id,
-                                        nfvo_id, platform, vnf_description)
+                                        nfvo_id, platform, vnf_description, tunnel_type)
         except DatabaseException as e:
             return {'status': e.status, 'reason': e.reason}
 
@@ -811,15 +814,17 @@ class Core:
         out from NFVO networks.
 
         One important rule is applied:
-            1. NFVO's network_name from the origin VNF CP must be the same as the input CP of the first VNF in the chain.
+            1. NFVO's network_name from the origin VNF CP must be the same as the input CP of the first VNF
+               in the chain.
                If there are more CPs than 1, then a message with status OPTIONS and a cp_list is replied to the
                user to inform a desirable connection point.
 
         :param policy_data: input arguments are:
-            - sfc_uuid: the unique identifier to the SFC being composed
-            - origin: if the SFC traffic source is INTERNAL or EXTERNAL
-            - src_id: the VNF or VNF Package unique identifier from the NFVO when using INTERNAL traffic origin
-            - resource: optional when using INTERNAL origin. Identifies the manual user input of the source cp_out
+
+            :sfc_uuid: the unique identifier to the SFC being composed
+            :origin: if the SFC traffic source is INTERNAL or EXTERNAL
+            :src_id: the VNF or VNF Package unique identifier from the NFVO when using INTERNAL traffic origin
+            :resource: optional when using INTERNAL origin. Identifies the manual user input of the source cp_out
 
         :return: OK if success, or ERROR and its reason if not, or OPTIONS and a cp_list dict
         """
@@ -832,7 +837,6 @@ class Core:
         except KeyError:
             return {'status': ERROR, 'reason': 'SFC UUID must be informed!'}
 
-        # gets the domain_id and nfvo_id from the first segment
         domain_id = sfc_template[0]['domain_id']
         nfvo_id = sfc_template[0]['nfvo_id']
 
@@ -887,7 +891,6 @@ class Core:
 
         :return: OK if success, or ERROR and its reason if not
         """
-
         try:
             sfc_template = self.cache.get(policy_data['sfc_uuid'])
             if not sfc_template:
@@ -920,6 +923,134 @@ class Core:
 
         return {'status': OK}
 
+    def parse_segment_classifier_policy(self, policy, input_platform, output_platform):
+        """ Maps an ACL type from one NFV Orchestrator to the same ACL on another NFV Orchestrator
+
+        :param policy: a dict containing the classifier policy (ACL name) as the key and its value
+        :param input_platform: the platform name of the policy param (e.g. tacker, osm)
+        :param output_platform: the platform name of the policy to be parsed
+        :return: a dict with the parsed classifier policy of the output platform, or None if the policy was not found
+        """
+        policy_mapping = {
+            # Syntax 'platform': ['protocol', src_ip', 'dst_ip', 'src_port', 'dst_port']
+            TACKER_NFVO: ['ip_proto', 'ip_src_prefix', 'ip_dst_prefix', 'source_port_range', 'destination_port_range'],
+            OSM_NFVO: ['ip-proto', 'source-ip-address', 'destination-ip-address', 'source-port', 'destination-port']
+        }
+
+        key = [*policy][0]
+        value = policy[key]
+
+        try:
+            index = policy_mapping[input_platform].index(key)
+        except ValueError:
+            return None
+
+        if input_platform == TACKER_NFVO:
+
+            if key in ('ip_src_prefix', 'ip_dst_prefix'):  # IP
+                value = value.split(sep='/')[0]
+            elif key in ('source_port_range', 'destination_port_range'):  # PORTS
+                value = value.split(sep='-')[0]
+            elif key == 'ip_proto':
+                # converting int from Tacker to str for OSM
+                value = str(value)
+
+        else:  # just remained OSM, so far
+
+            if key in ('source-ip-address', 'destination-ip-address'):
+                value = ''.join([value, '/32'])
+            elif key in ('source-port', 'destination-port'):
+                value = ''.join([value, '-', value])
+            elif key == 'ip-proto':
+                # converting string from OSM to int for Tacker
+                value = int(value)
+
+        key = policy_mapping[output_platform][index]
+
+        return {key: value}
+
+    def configure_multi_sfc_segments(self, sfc_segments):
+        """Configures all multi-sfc segment tunnels and classifiers according to the configuration of the
+        first classifier
+
+        It configures all classifiers and tunnel vnfs in order to steer the traffic of an SFC through all segments
+
+        :param sfc_segments: must contain a list with domains/nfvos and their respective sfc templates
+        :return: sfc_segments with configured classifiers
+
+        Raises
+        ------
+            MultiSFCException
+
+        ReRaises
+        ------
+            NFVOAgentsException, DatabaseException
+        """
+        tunnel = None
+        input_platform = None
+        input_criteria = None
+
+        for segment in sfc_segments:
+            domain_id = segment['domain_id']
+            nfvo_id = segment['nfvo_id']
+            platform = self._domain_catalog[domain_id][nfvo_id]['platform']
+
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
+
+            if input_platform is None:  # it means that the segment is the first one
+                input_platform = platform
+                tunnel = self._domain_catalog[domain_id][nfvo_id]['tunnel']
+                input_criteria = nfvo_agent.get_configured_policies(segment['sfc_template'])
+
+            if self._domain_catalog[domain_id][nfvo_id]['tunnel'] != tunnel or tunnel is None:
+                raise MultiSFCException("Configuration of segment tunnels mismatch!")
+
+            tunnel_vnfp = database.list_catalog(platform=platform, tunnel=tunnel)
+            if not tunnel_vnfp:
+                raise MultiSFCException("No VNF Package found to configure %s tunnel!" % tunnel)
+
+            vnfp_dir = tunnel_vnfp[0]['dir_id']
+            vnfd_name = tunnel_vnfp[0]['vnfd_name']
+
+            # if it is not the first segment, then add the tunnel vnf at the beginning of the segment
+            if sfc_segments.index(segment) > 0:
+                # Configuring acl policies based on the first segment classifier
+                segment_criteria = {}
+                for criteria in input_criteria:
+                    parsed_criteria = self.parse_segment_classifier_policy(criteria, input_platform, platform)
+                    if parsed_criteria is not None:
+                        segment_criteria.update(parsed_criteria)
+
+                segment['sfc_template'] = nfvo_agent.configure_policies(segment['sfc_template'], segment_criteria)
+
+                # Configuring the segment input VNF (tunnel)
+                if platform == TACKER_NFVO:
+                    # In case of Tacker, the VNF needs to be instantiated previously to be added on the classifier
+                    vnf_name = str(vnfd_name).replace('vnfd', 'vnf')
+
+                    vnfp_dir = '/'.join(['repository', vnfp_dir])
+                    response = nfvo_agent.create_vnf(vnfp_dir, vnfd_name, vnf_name)
+                    src_id = response['vnf_id']
+
+                    database.insert_vnf_instance(tunnel_vnfp[0]['_id'], domain_id, nfvo_id,
+                                                 response['vnfd_id'], response['vnf_id'])
+
+                    segment['incoming_vnf'] = response['vnf_id']
+
+                else:
+                    src_id = tunnel_vnfp[0]['_id']
+
+                segment['sfc_template'] = nfvo_agent.configure_traffic_src_policy(
+                    segment['sfc_template'], INTERNAL, src_id, None, database)
+
+            # if it is not the last segment, then add the tunnel vnf at the end of the segment
+            if sfc_segments.index(segment) < len(sfc_segments) - 1:
+
+                segment['sfc_template'] = nfvo_agent.compose_sfp(segment['sfc_template'], vnfd_name,
+                                                                 vnfp_dir, database, None)
+
+        return sfc_segments
+
     def create_sfc(self, sfc_data):
         """Sends and instantiates all segments of a Multi-SFC
 
@@ -932,7 +1063,6 @@ class Core:
 
         :return: OK if all succeed, or ERROR and its reason
         """
-        # TODO need to store each segment information at sfc_instances collection in database
         try:
             sfc_segments = self.cache.get(sfc_data['sfc_uuid'])
             if not sfc_segments:
@@ -947,63 +1077,76 @@ class Core:
         else:
             sfc_name = unique_id()
 
-        for segment in sfc_segments:
-            domain_id = segment['domain_id']
-            nfvo_id = segment['nfvo_id']
-            try:
+        # TODO verificar se tem que instanciar uma sfc por vez e passar o src_ip de origem, ou fazer tudo com MAQUERADE?
+        # ANSWER Se informar o src_ip na ACL, configurar o roteamento. Se nao informar o src_ip, fazer MASQUERADE
+
+        try:
+            if len(sfc_segments) > 1:
+                sfc_segments = self.configure_multi_sfc_segments(sfc_segments)
+
+            # instantiating all segments
+            seg_num = 1
+            for segment in sfc_segments:
+                domain_id = segment['domain_id']
+                nfvo_id = segment['nfvo_id']
+                segment_name = ''.join([sfc_name, '-seg', str(seg_num)])
+                seg_num += 1
+
                 nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
-                sfc = nfvo_agent.create_sfc(segment['sfc_template'], database, self, sfc_data['sfc_uuid'], sfc_name)
+                sfc = nfvo_agent.create_sfc(segment['sfc_template'], database, self, sfc_data['sfc_uuid'], segment_name)
 
-            except (NFVOAgentsException, DatabaseException) as ex:
-                return {'status': ex.status, 'reason': ex.reason}
-            except MultiSFCException as e:
-                return {'status': ERROR, 'reason': str(e)}
+                sfc['segment_name'] = segment_name
 
-            # Rollback in case of error on inserting in database
-            try:
-                database.insert_sfc_instance(sfc['vnf_instances'], sfc['nsd_id'], sfc['ns_id'],
-                                             sfc_name, domain_id, nfvo_id)
-            # Rollback actions
-            except DatabaseException as dbe:
-                # this function raises an NFVOAgentsException and don't need to be caught,
-                # either way, the code after it won't run
-                # self.destroy_vnffg(vnffg_id)
-                try:
-                    nfvo_agent.destroy_sfc(sfc['ns_id'])
-                except NFVOAgentsException as e:
-                    dbe.reason = ' '.join([dbe.reason, e.reason])
+                # in case of tacker platform, at destroying the SFC segment the tunnel VNF must also be destroyed
+                if 'incoming_vnf' in segment:
+                    sfc['vnf_instances'].insert(0, segment['incoming_vnf'])
 
-                return {'status': dbe.status, 'reason': dbe.reason}
+                database.insert_sfc_instance(sfc_name, sfc_data['sfc_uuid'], sfc['vnf_instances'], sfc['nsd_id'],
+                                             sfc['ns_id'], segment_name, domain_id, nfvo_id)
 
-            logger.info("SFC %s instantiated successfully!", sfc['ns_id'])
+                logger.info("Segment %s instantiated successfully!", segment_name)
+
+        except (NFVOAgentsException, DatabaseException) as ex:
+            return {'status': ex.status, 'reason': ex.reason}
+        except MultiSFCException as e:
+            return {'status': ERROR, 'reason': str(e)}
+
+        logger.info("SFC %s instantiated successfully!", sfc_name)
 
         self.cache.delete(sfc_data['sfc_uuid'])
 
         return {'status': OK}
 
-    def destroy_sfc(self, sfc_id):
+    def destroy_sfc(self, multi_sfc_id):
         """Destroy all segments of a Multi-SFC
     
-        :param sfc_id: the NFVO unique identifier of the SFC
+        :param multi_sfc_id: the multi-sfc unique identifier stored in database
         :return: OK if succeed, or ERROR and its reason if not
         """
-        # TODO destroying all segments of a multi-sfc not implemented yet
         try:
-            sfc = database.list_sfc_instances(ns_id=sfc_id)
-            if not sfc:
-                raise MultiSFCException("SFC id %s cannot be destroyed. Not found in database." % sfc_id)
+            sfcs = database.list_sfc_instances(multi_sfc_id=multi_sfc_id)
+            if not sfcs:
+                raise MultiSFCException("Multi-SFC id '%s' cannot be destroyed. Not found in database." % multi_sfc_id)
 
-            domain_id = sfc[0]['domain_id']
-            nfvo_id = sfc[0]['nfvo_id']
+            for sfc in sfcs:
+                domain_id = sfc['domain_id']
+                nfvo_id = sfc['nfvo_id']
+                ns_id = sfc['ns_id']
 
-            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
+                nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
-            nfvo_agent.destroy_sfc(sfc_id, self)
+                nfvo_agent.destroy_sfc(ns_id, self)
 
-            # remove SFC_Instance from database
-            _id = sfc[0]['_id']
-            database.remove_sfc_instance(_id)
+                # in case tacker_agent, there is a need to remove the VNF of the multi-sfc tunnel
+                if isinstance(nfvo_agent, TackerAgent):
+                    vnf_id = sfc['vnf_instances'][0]
+                    if nfvo_agent.show_vnf(vnf_id):
+                        self.destroy_vnf(vnf_id)
+
+                # remove SFC_Instance from database
+                _id = sfc['_id']
+                database.remove_sfc_instance(_id)
 
         except (NFVOAgentsException, DatabaseException) as e:
             return {'status': e.status, 'reason': e.reason}
@@ -1015,14 +1158,34 @@ class Core:
     def list_sfcs(self):
         """Retrieves all instantiated SFCs from each NFVO in all domains"""
 
+        db_sfc_list = database.list_sfc_instances()
+        multi_sfc_data = {}
+        for sfc in db_sfc_list:
+            segment = {
+                sfc['ns_id']: {
+                    'multi_sfc_id': sfc['multi_sfc_id'],
+                    'sfc_name': sfc['sfc_name'],
+                    'vnf_instances': sfc['vnf_instances']
+                }
+            }
+            multi_sfc_data.update(segment)
+
         data = []
         for domain in self._config_data['domains']:
             for nfvo in domain['nfvos']:
                 nfvo_agent = nfvo['nfvo_agent']
-
                 try:
                     sfcs = nfvo_agent.list_sfcs()
                     for sfc in sfcs:
+                        try:
+                            sfc['multi_sfc_id'] = multi_sfc_data.get(sfc['id']).get('multi_sfc_id')
+                            sfc['sfc_name'] = multi_sfc_data.get(sfc['id']).get('sfc_name')
+                            # replacing current vnf_chain
+                            sfc['vnf_chain'] = multi_sfc_data.get(sfc['id']).get('vnf_instances')
+                        except (AttributeError, KeyError):
+                            sfc['multi_sfc_id'] = 'None'
+                            sfc['sfc_name'] = 'None'
+
                         sfc['domain_name'] = domain['name']
                         sfc['nfvo_name'] = nfvo['name']
                     data.extend(sfcs)

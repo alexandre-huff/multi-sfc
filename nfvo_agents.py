@@ -15,6 +15,9 @@ class NFVOAgents(Interface):
     def destroy_vnf(self, vnf_id):
         pass
 
+    def show_vnf(self, vnf_id):
+        pass
+
     def list_sfcs(self):
         pass
 
@@ -22,6 +25,9 @@ class NFVOAgents(Interface):
         pass
 
     def get_sfc_template(self):
+        pass
+
+    def get_configured_policies(self, sfc_descriptor):
         pass
 
     def compose_sfp(self, sfc_descriptor, vnfd_name, vnfp_dir, database, options_cp_out):
