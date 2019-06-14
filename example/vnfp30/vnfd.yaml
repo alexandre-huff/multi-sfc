@@ -89,7 +89,7 @@ topology_template:
     VL302:
       type: tosca.nodes.nfv.VL
       properties:
-        network_name: net1
+        network_name: net0
         vendor: Tacker
 
     VL303:
