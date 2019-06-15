@@ -44,6 +44,10 @@ topology_template:
           systemctl restart networking.service
           echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC69CsT895dFfNG6dTnYN6pUPw4dQXdw0i4QqH8DaJFX8FGbb8H97zT7JWsrVUOZvRwBHl1Pg36TRDv4iu67tHoso6pMf78lGeNgktSR9qbYVkHha4EOWjNiG19iVyhsGp2aZdqP4VkCOQ2n+zqLRcUNLY4Q1w9rG95w9yYtBLPDi5LtjMQSS3Y2cIUVwmA9OKtC+2mPNm3TaqQzLZrEYHrffGWtenZ+puMDe4ZBZcn6b7Cd8iECcXdANgDgF15igOvfleTghokDgwAFJRbVJfQMUbZQwX3yDgAJODWWsE3oqfjcOE2EMd0bMZM6Gj0GQ+VMVJSR6Dw5ZNtEVFJE9I7 alexandre@tacker-vim" >> /home/ubuntu/.ssh/authorized_keys
           echo "sh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/lymHq+InhmVI48dNWEnJXyQeVnID4l5UhY0yKm7K/yuAjPE+XsYc0IyDaNcsQYgdixX8dCvTsXQAoTAV2VWtKNSgl+FUbg6fPjfTMfVkIAVTb2uTmwrM0XUm+DF3Rl3/3PTM2qUJzU71WfkEV4FtUYVifp4ID8DOKelqX3/TsK5HRuE1IdulLAt3p4wox7HwJm0NK4UbEn5xvXfXLCsj8Uv/cBdZ18bE9/XPl2CA1RztRVNcHt12sM034LdlG2FgK03BAPcFDKKw/nAac9MpKRo9ANfA/uxBUJJaLq40wOvCBYUvZStG34ErZnVmBnhsH57yd7HfYny2HSztTVwF alexandre@huff" >> /home/ubuntu/.ssh/authorized_keys
+          apt-get update
+          apt-get install python3-flask -y
+          runuser -l ubuntu -c 'curl http://200.17.212.241:5050/tunnel/em > ~/em.py'
+          runuser -l ubuntu -c 'python3 ~/em.py &'
 
     CP401:
       type: tosca.nodes.nfv.CP.Tacker

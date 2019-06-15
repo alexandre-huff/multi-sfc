@@ -41,3 +41,9 @@ OSM_NFVO    = 'osm'
 # Returns an unique ID
 def unique_id():
     return str(uuid.uuid4())
+
+
+tunnel_config_scripts = {
+    'vxlan': 'em/vxlan.sh',
+    'ipsec': 'em/ipsec.sh'
+}

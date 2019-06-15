@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 
 import logging
-from flask import Flask
-from flask import request, jsonify
+from flask import Flask, send_file
+from flask import request, jsonify, make_response
+
 from core import Core
-from utils import TACKER_NFVO, OSM_NFVO, OK, ERROR
 
 # LOGGING
 # basicConfig sets up all the logs from libraries
@@ -25,6 +25,18 @@ logger = logging.getLogger('server')
 app = Flask(__name__)
 
 core = Core()
+
+
+@app.route('/tunnel/em', methods=['GET'])
+def get_tunnel_em():
+    try:
+        response = make_response(send_file('em/em.py', mimetype='application/octet-stream'))
+
+    except FileNotFoundError as e:
+        logger.error(str(e))
+        response = make_response("EM script not found to configure IP tunnel\n", 404)
+
+    return response
 
 
 @app.route('/catalog/vnfs', methods=['GET'])
@@ -126,4 +138,4 @@ def list_sfcs():
 if __name__ == '__main__':
     # app.run(threaded=True)
     # app.run(threaded=False)
-    app.run(processes=1, threaded=False, port=5050)
+    app.run(host='0.0.0.0', processes=1, threaded=False, port=5050)
