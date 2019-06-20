@@ -35,6 +35,7 @@ topology_template:
           locale-gen pt_BR.UTF-8
           timedatectl set-timezone America/Sao_Paulo
           systemctl restart networking.service
+          apt-get install iperf3 -y
 
     CP71:
       type: tosca.nodes.nfv.CP.Tacker

@@ -46,8 +46,8 @@ topology_template:
           echo "sh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/lymHq+InhmVI48dNWEnJXyQeVnID4l5UhY0yKm7K/yuAjPE+XsYc0IyDaNcsQYgdixX8dCvTsXQAoTAV2VWtKNSgl+FUbg6fPjfTMfVkIAVTb2uTmwrM0XUm+DF3Rl3/3PTM2qUJzU71WfkEV4FtUYVifp4ID8DOKelqX3/TsK5HRuE1IdulLAt3p4wox7HwJm0NK4UbEn5xvXfXLCsj8Uv/cBdZ18bE9/XPl2CA1RztRVNcHt12sM034LdlG2FgK03BAPcFDKKw/nAac9MpKRo9ANfA/uxBUJJaLq40wOvCBYUvZStG34ErZnVmBnhsH57yd7HfYny2HSztTVwF alexandre@huff" >> /home/ubuntu/.ssh/authorized_keys
           apt-get update
           apt-get install python3-flask -y
-          runuser -l ubuntu -c 'curl http://200.17.212.241:5050/tunnel/em > ~/em.py'
-          runuser -l ubuntu -c 'python3 ~/em.py &'
+          runuser -l ubuntu -c "curl http://200.17.212.241:5050/tunnel/em > ~/em.py"
+          runuser -l ubuntu -c "python3 ~/em.py &"
 
     CP401:
       type: tosca.nodes.nfv.CP.Tacker

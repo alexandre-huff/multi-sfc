@@ -39,6 +39,7 @@ topology_template:
           iface ens4 inet dhcp
           EOF
           systemctl restart networking.service
+          apt-get install iperf3 -y
 
     CP61:
       type: tosca.nodes.nfv.CP.Tacker
