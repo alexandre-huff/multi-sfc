@@ -31,9 +31,7 @@ do_stop() {
         sudo ip link set vxlan0 down
         sudo ip link del vxlan0
 
-        if [ "$NAT" = "True" ]; then
-            sudo iptables -t nat -D POSTROUTING -o ${LAN_IFACE} -j MASQUERADE
-        fi
+        sudo iptables -t nat -D POSTROUTING -o ${LAN_IFACE} -j MASQUERADE
 }
 
 do_status() {
@@ -43,11 +41,15 @@ do_status() {
         ip addr show vxlan0 |grep inet
         echo "=============== ROUTE ==============="
         ip route show |grep vxlan0
+        echo "================ NAT ================"
+        sudo iptables -t nat -L -n | grep POSTROUTING -A 10
+}
 
-        if [ "$NAT" = "True" ]; then
-            echo "================ NAT ================"
-            sudo iptables -t nat -L -n | grep POSTROUTING -A 10
-        fi
+networks() {
+        WAN=$(ip -4 -br addr show ${WAN_IFACE} | awk {'print $3'} | sed 's/\/..//')
+        LAN=$(ip -4 -br addr show ${LAN_IFACE} | awk {'print $3'} | sed 's/\/..//')
+        LAN_NET=$(ip route | grep ${LAN_IFACE} | awk {'print $1'})
+        echo -en "wan_ip=${WAN}\nlan_ip=${LAN}\nlan_net=${LAN_NET}"
 }
 
 case "${ACTION}" in
@@ -67,6 +69,10 @@ case "${ACTION}" in
 
   status)
         do_status
+        ;;
+
+  networks)
+        networks
         ;;
 
   *)

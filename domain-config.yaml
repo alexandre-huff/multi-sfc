@@ -12,10 +12,12 @@ domains:
         tenant-name: admin
         # a VIM name configured in this NFVO
         vim-name: VIM0
+        vim-username: admin
+        vim-password: devstack
         # currently only "openstack" is supported
         vim-type: openstack
         # ipsec|vxlan|or it can be left with no value in case of not running a multi-sfc
-        tunnel: ipsec
+        tunnel: vxlan
 
   # if you don't have other domain or nfvo, just comment it
   - id: domain2
@@ -28,16 +30,8 @@ domains:
         username: admin
         password: admin
         tenant-name: admin
-        vim-name: VIM1
+        vim-name: VIM0
+        vim-username: admin
+        vim-password: devstack
         vim-type: openstack
-        tunnel: ipsec
-#      - id:  tacker-site2
-#        name: Tacker at Domain 2
-#        platform: tacker
-#        host: 0.0.0.0
-#        username: admin
-#        password: admin
-#        tenant-name: admin
-#        vim-name: VIM0
-#        vim-type: openstack
-#        tunnel:
+        tunnel: vxlan

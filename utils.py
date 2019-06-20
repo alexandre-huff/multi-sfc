@@ -2,6 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import uuid
+import time
+import socket
+from contextlib import closing
 
 # REST API status codes
 status = {
@@ -47,3 +50,32 @@ tunnel_config_scripts = {
     'vxlan': 'em/vxlan.sh',
     'ipsec': 'em/ipsec.sh'
 }
+
+
+def socket_polling(ip_address, port, sleep_time=15, wait_time=600):
+    """
+
+    :param ip_address:
+    :param port:
+    :param sleep_time:
+    :param wait_time:
+    :return:
+
+    Raises
+    ------
+        OSError, TimeoutError
+    """
+    timeout = time.time() + wait_time
+    # time.sleep(sleep_time)
+
+    while timeout > time.time():
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+            sock.settimeout(5)
+            try:
+                sock.connect((ip_address, port))
+                return
+            except ConnectionError:
+                time.sleep(sleep_time)
+                continue
+
+    raise TimeoutError("Timeout")

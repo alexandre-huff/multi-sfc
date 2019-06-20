@@ -30,7 +30,7 @@ elif tunnel == 'vxlan':
     script_path = VXLAN_PATH
     args = {
         'type': tunnel,
-        'action': 'stop',
+        'action': 'start',
         'local_ip': '172.24.241.15',
         'remote_ip': '172.24.240.12',
         'vxlan_local_ip': '192.168.200.1/30',

@@ -303,7 +303,7 @@ class Tacker:
         return requests.get(url, headers=self.header)
 
     def vim_show(self, vim_id):
-        """List all VIMs"""
+        """Show a VIM by its id"""
 
         url = self.tacker_endpoint + '/vims/%s' % vim_id
         return requests.get(url, headers=self.header)

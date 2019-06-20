@@ -3,6 +3,7 @@
 import logging
 from flask import Flask, send_file
 from flask import request, jsonify, make_response
+from utils import tunnel_config_scripts
 
 from core import Core
 
@@ -30,11 +31,23 @@ core = Core()
 @app.route('/tunnel/em', methods=['GET'])
 def get_tunnel_em():
     try:
-        response = make_response(send_file('em/em.py', mimetype='application/octet-stream'))
+        response = make_response(send_file('em/tunnel_em.py', mimetype='application/octet-stream'))
 
     except FileNotFoundError as e:
         logger.error(str(e))
         response = make_response("EM script not found to configure IP tunnel\n", 404)
+
+    return response
+
+
+@app.route('/tunnel/em/<script>', methods=['GET'])
+def get_tunnel_script(script):
+    try:
+        response = make_response(send_file(tunnel_config_scripts[script], mimetype='application/octet-stream'))
+
+    except FileNotFoundError as e:
+        logger.error(str(e))
+        response = make_response("Tunnel script not found to configure IP tunnel\n", 404)
 
     return response
 
@@ -138,4 +151,6 @@ def list_sfcs():
 if __name__ == '__main__':
     # app.run(threaded=True)
     # app.run(threaded=False)
-    app.run(host='0.0.0.0', processes=1, threaded=False, port=5050)
+    # Threads are required in order to allow downloading EM scripts while polling cloud-init
+    # configuration scripts on tunnel VNFs
+    app.run(host='0.0.0.0', processes=1, threaded=True, port=5050)

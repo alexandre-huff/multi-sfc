@@ -81,8 +81,6 @@ def get_nsd_file_name(path):
 
 
 def include_package():
-    # TODO: also include a VNF Package with YAML descriptors
-
     url = base_url + '/package'
 
     table = PrettyTable(["VNF Package", "Description", "Platform", "VNF Category"])

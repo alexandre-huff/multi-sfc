@@ -6,11 +6,12 @@ import yaml
 import logging
 
 from multiprocessing.pool import Pool
-from exceptions import NFVOAgentsException, NFVOAgentOptions, DatabaseException
+from exceptions import NFVOAgentsException, NFVOAgentOptions
 from nfvo_agents import NFVOAgents
 from interface import implements
 
-from utils import OK, ERROR, ACTIVE, TIMEOUT, TACKER_NFVO, INTERNAL, EXTERNAL, unique_id, status
+from openstack_agent import OpenStackAgent
+from utils import OK, ERROR, ACTIVE, TIMEOUT, TACKER_NFVO, INTERNAL, EXTERNAL, status
 from tacker import IdentityManager, Tacker
 # The package fake_tacker should be used for performance testing or demo purposes. It takes out Tacker NFVO requests
 # Also see in the beginning of the "create_vnf" function in "Core" class.
@@ -26,7 +27,8 @@ logger = logging.getLogger('tacker_agent')
 class TackerAgent(implements(NFVOAgents)):
     """Implementation of the Tacker Agent."""
 
-    def __init__(self, host, username, password, tenant_name, vim_name, domain_id, domain_name, nfvo_id, nfvo_name):
+    def __init__(self, host, username, password, tenant_name, vim_name, vim_username, vim_password,
+                 domain_id, domain_name, nfvo_id, nfvo_name):
         self.vim_name = vim_name
         self.nfvo_name = nfvo_name
         self.domain_name = domain_name
@@ -40,6 +42,7 @@ class TackerAgent(implements(NFVOAgents)):
         self.tacker = Tacker(token, tacker_ep)
 
         self.vim_id = self._get_vim_id()
+        # self.vim_agent = self._init_vim_agent(self.vim_id, vim_username, vim_password)
 
     def _get_vim_id(self):
         response = self.tacker.vim_list()
@@ -55,6 +58,24 @@ class TackerAgent(implements(NFVOAgents)):
         msg = "VIM '%s' not found in '%s' platform!" % (self.vim_name, self.nfvo_name)
         logger.critical(msg)
         exit(1)
+
+    def _init_vim_agent(self, vim_id, username, password):
+        response = self.tacker.vim_show(vim_id)
+        if response.status_code != 200:
+            raise NFVOAgentsException(ERROR, status[response.status_code])
+
+        vim_data = response.json()['vim']
+        if vim_data['type'] != 'openstack':
+            msg = "VIM type %s not supported." % vim_data['type']
+            logger.error(msg)
+            raise NFVOAgentsException(ERROR, msg)
+
+        vim_agent = OpenStackAgent(vim_data['auth_url'],
+                                   username,
+                                   password,
+                                   vim_data['vim_project']['name']
+                                   )
+        return vim_agent
 
     @staticmethod
     def vnfd_json_yaml_parser(vnfd):
@@ -200,8 +221,6 @@ class TackerAgent(implements(NFVOAgents)):
             vnf_status = response.json()['vnf']['status']
 
             if vnf_status == ACTIVE:
-                # TODO: what is the better way to retrieve VNF IP? It may change
-                #       depending on the VNF descriptor.
                 vnf_ip = json.loads(response.json()['vnf']['mgmt_url'])['VDU1']
                 return vnf_ip
 
@@ -443,17 +462,21 @@ class TackerAgent(implements(NFVOAgents)):
 
         if response.status_code == 200:
             response = response.json()['vnf']
-
-            for k, v in iter(response.items()):
-                if k in ('id', 'name', 'status', 'vnfd_id', 'error_reason', 'description', 'instance_id'):
-                    vnf[k] = v
+            # for k, v in iter(response.items()):
+            #     if k in ('id', 'name', 'status', 'vnfd_id', 'error_reason', 'description', 'instance_id'):
+            #         vnf[k] = v
             mgmt_url = json.loads(response['mgmt_url'])['VDU1']
             instance = response['attributes']['heat_template']
             instance = yaml.full_load(instance)
             instance_name = instance['resources']['VDU1']['properties']['name']
 
-            vnf['mgmt_url'] = mgmt_url
-            vnf['instance_name'] = instance_name
+            vnf['id'] = response['id']
+            vnf['name'] = response['name']
+            vnf['status'] = response['status']
+            vnf['error_reason'] = response['error_reason']
+            vnf['vnfd_id'] = response['vnfd_id']
+            vnf['mgmt_address'] = mgmt_url
+            vnf['vm_name'] = instance_name
 
         return vnf
 
@@ -1360,3 +1383,6 @@ class TackerAgent(implements(NFVOAgents)):
 
     def dump_sfc_descriptor(self, sfc_descriptor):
         return json.dumps(sfc_descriptor, indent=2, sort_keys=True)
+
+    def get_vim_agent(self):
+        return self.vim_agent

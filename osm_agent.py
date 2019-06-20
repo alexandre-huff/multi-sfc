@@ -240,11 +240,20 @@ class OSMAgent(implements(NFVOAgents)):
             raise NFVOAgentsException(ERROR, str(e))
 
     def show_vnf(self, vnf_id):
+        vnf = {}
         try:
-            vnf = self.client.vnf.get(vnf_id)
+            response = self.client.vnf.get(vnf_id)
+
+            vnf['id'] = response['id']
+            vnf['name'] = response['id']  # OSM does not have VNF name, used id for compatibility
+            vnf['status'] = response['vdur'][0]['status']
+            vnf['error_reason'] = ''
+            vnf['vnfd_id'] = response['vnfd-id']
+            vnf['mgmt_address'] = response['ip-address']
+            vnf['vm_name'] = response['vdur'][0]['name']
 
         except NotFound:
-            vnf = {}
+            pass
 
         return vnf
 
@@ -707,7 +716,7 @@ class OSMAgent(implements(NFVOAgents)):
 
         criteria = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['classifier'][0]['match-attributes'][0]
 
-        # TODO Needs to implement a criteria parser and validator as in tacker_agent
+        # TODO Needs to implement a criteria parser and validator as implemented in tacker_agent
         criteria.update(acl)
 
         return sfc_descriptor
@@ -740,12 +749,14 @@ class OSMAgent(implements(NFVOAgents)):
 
         try:
             self.client.nsd.get(sfc_name)
+            logger.error("NSD name '%s' already exists on %s", sfc_name, self.nfvo_name)
             raise NFVOAgentsException(ERROR, "SFC name '%s' already exists" % sfc_name)
         except NotFound:
             pass
 
         try:
             self.client.ns.get(sfc_name)
+            logger.error("NS name '%s' already exists on %s", sfc_name, self.nfvo_name)
             raise NFVOAgentsException(ERROR, "SFC name '%s' already exists" % sfc_name)
         except NotFound:
             pass
@@ -845,3 +856,7 @@ class OSMAgent(implements(NFVOAgents)):
 
     def dump_sfc_descriptor(self, sfc_descriptor):
         return yaml.dump(sfc_descriptor)
+
+    def get_vim_agent(self):
+        return self.vim_agent
+
