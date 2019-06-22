@@ -9,7 +9,7 @@ from core import Core
 
 # LOGGING
 # basicConfig sets up all the logs from libraries
-logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-8s  %(name)-12s  %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)-8s  %(name)-15s  %(message)s")
 logger = logging.getLogger('server')
 # logger.setLevel(logging.INFO)
 # # create console handler and set level to debug

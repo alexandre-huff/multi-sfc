@@ -9,6 +9,7 @@ from time import sleep, time
 from exceptions import NFVOAgentsException
 from nfvo_agents import NFVOAgents
 from interface import implements
+from openstack_agent import OpenStackAgent
 from utils import OSM_NFVO, ERROR, TIMEOUT, INTERNAL, ANY
 
 from osmclient.sol005 import client as osm
@@ -37,16 +38,6 @@ class OSMAgent(implements(NFVOAgents)):
 
         self.vim_id = self._get_vim_id()
 
-    def _get_vim_id(self):
-        try:
-            vim = self.client.vim.get(self.vim_name)
-        except NotFound as e:
-            msg = "VIM '%s' not found in '%s platform!" % (self.vim_name, self.nfvo_name)
-            logger.critical(msg)
-            exit(1)
-        else:
-            return vim['_id']
-
     def _get_repository_nsd_content(self, dir_id):
         dir_name = '/'.join([os.getcwd(), 'repository', dir_id])
 
@@ -60,6 +51,31 @@ class OSMAgent(implements(NFVOAgents)):
         tar.close()
 
         return nsd_yaml
+
+    def _get_vim_id(self):
+        try:
+            vim = self.client.vim.get(self.vim_name)
+        except NotFound as e:
+            msg = "VIM '%s' not found in '%s platform!" % (self.vim_name, self.nfvo_name)
+            logger.critical(msg)
+            exit(1)
+        else:
+            return vim['_id']
+
+    def get_vim_agent_instance(self):
+        vim = self.client.vim.get(self.vim_name)
+
+        if vim['vim_type'] != 'openstack':
+            msg = "VIM type %s not supported." % vim['vim_type']
+            logger.error(msg)
+            raise NFVOAgentsException(ERROR, msg)
+
+        vim_agent = OpenStackAgent(vim['vim_url'],
+                                   vim['vim_user'],
+                                   vim['vim_password'],
+                                   vim['vim_tenant_name']
+                                   )
+        return vim_agent
 
     def list_vnfs(self):
         """Retrieves a list of VNFs"""
@@ -856,7 +872,4 @@ class OSMAgent(implements(NFVOAgents)):
 
     def dump_sfc_descriptor(self, sfc_descriptor):
         return yaml.dump(sfc_descriptor)
-
-    def get_vim_agent(self):
-        return self.vim_agent
 

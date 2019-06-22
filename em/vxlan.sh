@@ -49,7 +49,8 @@ networks() {
         WAN=$(ip -4 -br addr show ${WAN_IFACE} | awk {'print $3'} | sed 's/\/..//')
         LAN=$(ip -4 -br addr show ${LAN_IFACE} | awk {'print $3'} | sed 's/\/..//')
         LAN_NET=$(ip route | grep ${LAN_IFACE} | awk {'print $1'})
-        echo -en "wan_ip=${WAN}\nlan_ip=${LAN}\nlan_net=${LAN_NET}"
+        GATEWAY=$(ip route |grep default |awk {'print $3'})
+        echo -en "wan_ip=${WAN}\nlan_ip=${LAN}\nlan_net=${LAN_NET}\ndefault_gw=${GATEWAY}"
 }
 
 case "${ACTION}" in

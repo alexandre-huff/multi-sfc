@@ -28,3 +28,9 @@ class DomainDataException(MultiSFCException):
         self.status = status
         self.reason = reason
         self.domain_data = domain_data
+
+
+class VIMAgentsException(MultiSFCException):
+    def __init__(self, status, reason):
+        self.status = status
+        self.reason = reason

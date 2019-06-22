@@ -11,7 +11,8 @@ import tarfile
 
 from click_manager import ElementManagement
 from em.tunnel_manager import VXLANTunnel, IPSecTunnel
-from exceptions import NFVOAgentsException, NFVOAgentOptions, MultiSFCException, DatabaseException, DomainDataException
+from exceptions import NFVOAgentsException, NFVOAgentOptions, MultiSFCException, DatabaseException, \
+    DomainDataException, VIMAgentsException
 from utils import *
 from flask import request
 from tacker_agent import TackerAgent
@@ -1133,6 +1134,7 @@ class Core:
                 domain_id = sfc['domain_id']
                 nfvo_id = sfc['nfvo_id']
                 ns_id = sfc['ns_id']
+                routing = sfc.get('routing')
 
                 nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
@@ -1143,6 +1145,16 @@ class Core:
                     vnf_id = sfc['vnf_instances'][0]
                     if nfvo_agent.show_vnf(vnf_id):
                         self.destroy_vnf(vnf_id)
+
+                # remove the route of the segment's virtual router in case it was configured (nat=False)
+                if routing is not None:
+                    vim_agent = nfvo_agent.get_vim_agent_instance()
+                    try:
+                        vim_agent.remove_route(routing['subnet_cidr'],
+                                               routing['destination'],
+                                               routing['next_hop'])
+                    except VIMAgentsException:
+                        pass  # no action is needed, it is just logged on the server
 
                 # remove SFC_Instance from database
                 _id = sfc['_id']
@@ -1204,7 +1216,7 @@ class Core:
 
         ReRaises
         ------
-            DatabaseException, MultiSFCException
+            DatabaseException, MultiSFCException, NFVOAgentsException
         """
 
         if len(sfc_segments) > 1:
@@ -1218,9 +1230,14 @@ class Core:
             # Each pair of segments must have different subnet ranges to configure the IP Tunnel
             nat = True
             policies = nfvo_agent.get_configured_policies(sfc_segments[0]['sfc_template'])
+            source_address = None
             for policy in policies:
                 if 'src-ip-address' in policy or 'ip_src_prefix' in policy:
                     nat = False
+                    try:
+                        source_address = policy['src-ip-address']
+                    except KeyError:
+                        source_address = policy['ip_src_prefix']
                     break
 
             error_msg = ''
@@ -1232,10 +1249,13 @@ class Core:
 
                 tunnel_type = self._domain_catalog[cur_segment['domain_id']][cur_segment['nfvo_id']]['tunnel']
 
-                # first VNF of current segment
-                tun_server_id = database.list_sfc_instances(multi_sfc_id=sfc_uuid, domain_id=cur_segment['domain_id'],
-                                                            nfvo_id=cur_segment['nfvo_id'])[0]['vnf_instances'][0]
-                # last VNF of previous segment
+                # first VNF of current segment, it is also regarded as the tun server
+                server_db_segment = database.list_sfc_instances(multi_sfc_id=sfc_uuid, domain_id=cur_segment['domain_id'],
+                                                                nfvo_id=cur_segment['nfvo_id'])[0]
+
+                tun_server_id = server_db_segment['vnf_instances'][0]  # getting the first VNF
+
+                # last VNF of previous segment, it is regarded as the tun client
                 tun_client_id = database.list_sfc_instances(multi_sfc_id=sfc_uuid, domain_id=prev_segment['domain_id'],
                                                             nfvo_id=prev_segment['nfvo_id'])[0]['vnf_instances'][-1]
 
@@ -1256,21 +1276,29 @@ class Core:
                     except TimeoutError as e:
                         raise MultiSFCException(e)
 
-                    vxlan_server_net = vxlan_server.get_networks()['response']
-                    vxlan_client_net = vxlan_client.get_networks()['response']
+                    tun_server_net = vxlan_server.get_networks()['response']
+                    tun_client_net = vxlan_client.get_networks()['response']
 
-                    resp = vxlan_server.start(local_ip=vxlan_server_net['wan_ip'],
-                                              remote_ip=vxlan_client_net['wan_ip'],
+                    # checking lan cidr, it still needs improvements
+                    if tun_server_net['lan_net'] == tun_client_net['lan_net']:
+                        msg = "IP tunnel LAN must differ! Tunnel not configured between %s and %s" \
+                              % (tun_client_net['wan_ip'], tun_server_net['wan_ip'])
+                        error_msg = ''.join([error_msg, msg, ' - '])
+                        logger.error(msg)
+                        continue
+
+                    resp = vxlan_server.start(local_ip=tun_server_net['wan_ip'],
+                                              remote_ip=tun_client_net['wan_ip'],
                                               server=True,
-                                              route_net_host=vxlan_client_net['lan_net'],
+                                              route_net_host=tun_client_net['lan_net'],
                                               nat=nat)
                     if resp['status'] == ERROR:
                         error_msg = ''.join([error_msg, resp['response'], ' - '])
 
-                    resp = vxlan_client.start(local_ip=vxlan_client_net['wan_ip'],
-                                              remote_ip=vxlan_server_net['wan_ip'],
+                    resp = vxlan_client.start(local_ip=tun_client_net['wan_ip'],
+                                              remote_ip=tun_server_net['wan_ip'],
                                               server=False,
-                                              route_net_host=vxlan_server_net['lan_net'],
+                                              route_net_host=tun_server_net['lan_net'],
                                               nat=nat)
                     if resp['status'] == ERROR:
                         error_msg = ''.join([error_msg, resp['response'], ' - '])
@@ -1283,27 +1311,56 @@ class Core:
                     except TimeoutError as e:
                         raise MultiSFCException(e)
 
-                    ipsec_server_net = ipsec_server.get_networks()['response']
-                    ipsec_client_net = ipsec_client.get_networks()['response']
+                    tun_server_net = ipsec_server.get_networks()['response']
+                    tun_client_net = ipsec_client.get_networks()['response']
 
-                    resp = ipsec_server.start(local_ip=ipsec_server_net['wan_ip'],
-                                              remote_ip=ipsec_client_net['wan_ip'],
-                                              local_lan=ipsec_server_net['lan_net'],
-                                              remote_lan=ipsec_client_net['lan_net'],
+                    # checking lan cidr, it must be improved
+                    if tun_server_net['lan_net'] == tun_client_net['lan_net']:
+                        msg = "IP tunnel LAN must differ! Tunnel not configured between %s and %s" \
+                              % (tun_client_net['wan_ip'], tun_server_net['wan_ip'])
+                        error_msg = ''.join([error_msg, msg, ' - '])
+                        logger.error(msg)
+                        continue
+
+                    resp = ipsec_server.start(local_ip=tun_server_net['wan_ip'],
+                                              remote_ip=tun_client_net['wan_ip'],
+                                              local_lan=tun_server_net['lan_net'],
+                                              remote_lan=tun_client_net['lan_net'],
                                               nat=nat)
                     if resp['status'] == ERROR:
                         error_msg = ''.join([error_msg, resp['response'], ' - '])
 
-                    resp = ipsec_client.start(local_ip=ipsec_client_net['wan_ip'],
-                                              remote_ip=ipsec_server_net['wan_ip'],
-                                              local_lan=ipsec_client_net['lan_net'],
-                                              remote_lan=ipsec_server_net['lan_net'],
+                    resp = ipsec_client.start(local_ip=tun_client_net['wan_ip'],
+                                              remote_ip=tun_server_net['wan_ip'],
+                                              local_lan=tun_client_net['lan_net'],
+                                              remote_lan=tun_server_net['lan_net'],
                                               nat=nat)
                     if resp['status'] == ERROR:
                         error_msg = ''.join([error_msg, resp['response'], ' - '])
 
                 else:
                     raise MultiSFCException("Tunnel type '%s' not implemented!" % tunnel_type)
+
+                # configuring router to steer traffic back to the tunnel
+                if not nat:
+                    vim_agent = server_nfvo_agent.get_vim_agent_instance()
+
+                    if '/' not in source_address:
+                        source_address = ''.join([source_address, '/32'])
+
+                    try:
+                        vim_agent.configure_route(tun_server_net['lan_net'],
+                                                  source_address,
+                                                  tun_server_net['lan_ip'])
+                        route = {
+                            'subnet_cidr': tun_server_net['lan_net'],
+                            'destination': source_address,
+                            'next_hop': tun_server_net['lan_ip']
+                        }
+                        database.update_sfc_instance(server_db_segment['_id'], routing=route)
+
+                    except (VIMAgentsException, DatabaseException) as e:
+                        error_msg = ''.join([error_msg, e.reason])
 
             if error_msg:
                 raise MultiSFCException(error_msg)

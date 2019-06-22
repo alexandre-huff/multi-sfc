@@ -51,5 +51,5 @@ class NFVOAgents(Interface):
     def dump_sfc_descriptor(self, sfc_descriptor):
         pass
 
-    def get_vim_agent(self):
+    def get_vim_agent_instance(self):
         pass

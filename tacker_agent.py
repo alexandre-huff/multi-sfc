@@ -30,6 +30,9 @@ class TackerAgent(implements(NFVOAgents)):
     def __init__(self, host, username, password, tenant_name, vim_name, vim_username, vim_password,
                  domain_id, domain_name, nfvo_id, nfvo_name):
         self.vim_name = vim_name
+        self._vim_username = vim_username
+        self._vim_password = vim_password
+
         self.nfvo_name = nfvo_name
         self.domain_name = domain_name
         self.domain_id = domain_id
@@ -42,7 +45,6 @@ class TackerAgent(implements(NFVOAgents)):
         self.tacker = Tacker(token, tacker_ep)
 
         self.vim_id = self._get_vim_id()
-        # self.vim_agent = self._init_vim_agent(self.vim_id, vim_username, vim_password)
 
     def _get_vim_id(self):
         response = self.tacker.vim_list()
@@ -59,8 +61,14 @@ class TackerAgent(implements(NFVOAgents)):
         logger.critical(msg)
         exit(1)
 
-    def _init_vim_agent(self, vim_id, username, password):
-        response = self.tacker.vim_show(vim_id)
+    def get_vim_agent_instance(self):
+        """Instantiates a VIM Agent
+
+        Raises
+        ------
+            NFVOAgentsException
+        """
+        response = self.tacker.vim_show(self.vim_id)
         if response.status_code != 200:
             raise NFVOAgentsException(ERROR, status[response.status_code])
 
@@ -71,8 +79,8 @@ class TackerAgent(implements(NFVOAgents)):
             raise NFVOAgentsException(ERROR, msg)
 
         vim_agent = OpenStackAgent(vim_data['auth_url'],
-                                   username,
-                                   password,
+                                   self._vim_username,
+                                   self._vim_password,
                                    vim_data['vim_project']['name']
                                    )
         return vim_agent
@@ -1383,6 +1391,3 @@ class TackerAgent(implements(NFVOAgents)):
 
     def dump_sfc_descriptor(self, sfc_descriptor):
         return json.dumps(sfc_descriptor, indent=2, sort_keys=True)
-
-    def get_vim_agent(self):
-        return self.vim_agent
