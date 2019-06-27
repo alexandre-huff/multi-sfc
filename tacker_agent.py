@@ -6,7 +6,7 @@ import yaml
 import logging
 
 from multiprocessing.pool import Pool
-from exceptions import NFVOAgentsException, NFVOAgentOptions
+from exceptions import NFVOAgentsException, NFVOAgentOptions, VIMAgentsException
 from nfvo_agents import NFVOAgents
 from interface import implements
 
@@ -683,13 +683,16 @@ class TackerAgent(implements(NFVOAgents)):
         ------
             NFVOAgentsException
         """
-        net_interfaces = self.identity.get_fip_router_interfaces()
-        if net_name not in net_interfaces:
-            msg = "Router Floating IP interface not configured for '%s' network in tacker.conf" % net_name
+        vim_agent = self.get_vim_agent_instance()
+
+        try:
+            src_port_id = vim_agent.get_fip_router_interfaces(net_name)
+        except VIMAgentsException as e:
+            msg = "Router Floating IP interface not configured for network '%s'. %s" % (net_name, e.reason)
             logger.error(msg)
             raise NFVOAgentsException(ERROR, msg)
 
-        return net_interfaces[net_name]
+        return src_port_id
 
     def select_and_validate_cp_out(self, options_cp_out, vnf_pkg_cps, cp_in):
         """Selects and validates the CP_out based on Tacker NFVO requirements
@@ -1131,8 +1134,7 @@ class TackerAgent(implements(NFVOAgents)):
             criteria.append({'network_src_port_id': resource_id})
 
         elif origin == EXTERNAL:
-            data = self.tacker_agent.get_fip_router_interface_id(
-                sfp_first_vnf_cps[sfp_cps[0]]['network_name'])
+            data = self.get_fip_router_interface_id(sfp_first_vnf_cps[sfp_cps[0]]['network_name'])
 
             criteria.append({'network_src_port_id': data})
 

@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-import configparser
-import os
 import requests
 import logging
 
@@ -19,19 +17,10 @@ class IdentityManager:
     """
 
     def __init__(self, host, username, password, tenant_name):
-        CONFIG_FILE = 'tacker.conf'
-        if not os.path.isfile(CONFIG_FILE):
-            logger.critical("Missing tacker.conf file!")
-            exit(1)
-
-        config = configparser.ConfigParser()
-        config.read(CONFIG_FILE)
-
         self.tacker_url = "http://%s/" % host
         self.username = username
         self.password = password
         self.tenant_name = tenant_name
-        self.fip_interfaces = config['sfc_fip_router_interface']
 
         self.header = {
             'Content-type': 'application/json',
@@ -41,16 +30,6 @@ class IdentityManager:
         resp = self.get_identity_info()
         self.token = resp.headers.get('X-Subject-Token')
         self.identity_info = resp.json()
-
-        # self.identity_info = self.get_identity_info_keystone()
-
-    def get_fip_router_interfaces(self):
-        """Return all FIP network configured interfaces in tacker.conf file
-
-        :return: a dictionary containing all FIP network configured interfaces in tacker.conf file
-        """
-
-        return self.fip_interfaces
 
     def get_identity_info(self):
         """

@@ -14,8 +14,6 @@ from keystoneauth1 import session
 from novaclient import client as nova_client
 from neutronclient.v2_0 import client as neutron_client
 from keystoneclient.v3 import client as keystone_client
-# from heatclient import client as heat_client
-# from stackclient???
 
 from urllib3.util import parse_url
 
@@ -27,7 +25,7 @@ class OpenStackAgent(implements(VIMAgents)):
 
     def __init__(self, auth_url, username, password, vim_project_name):
 
-        # auth_url = 'http://tacker-vim.local/identity/v3'
+        # auth_url = 'http://osm-vim.local/identity/v3'
         auth = v3.Password(auth_url=auth_url,
                            username=username,
                            password=password,
@@ -86,6 +84,38 @@ class OpenStackAgent(implements(VIMAgents)):
         router = self.neutron.show_router(router_id)
 
         return router['router']
+
+    def get_fip_router_interfaces(self, net_name):
+        """Retrieves Floating IP router network port ID
+
+        :param net_name:
+        :return: the router network_port_src_id from the router which has an interface attached on network net_name
+
+        Raises
+        ------
+            VIMAgentsException
+        """
+        nets = self.neutron.list_networks(tenant_id=self.project_id, name=net_name)
+        try:
+            net_id = nets['networks'][0]['id']
+        except (IndexError, KeyError) as e:
+            msg = "No network found with name %s!" % net_name
+            logger.error(' '.join([msg, "ERROR:", str(e)]))
+            raise VIMAgentsException(ERROR, msg)
+
+        ports = self.neutron.list_ports(device_owner="network:router_interface",
+                                        tenant_id=self.project_id,
+                                        network_id=net_id)
+        # What is the best way to find out the port id when there is more than one router
+        # sharing the same network in a same project
+        try:
+            port_id = ports['ports'][0]['id']
+        except (IndexError, KeyError) as e:
+            msg = "No router port configured in network %s!" % net_name
+            logger.error(' '.join([msg, "ERROR:", str(e)]))
+            raise VIMAgentsException(ERROR, msg)
+
+        return port_id
 
     def configure_route(self, router_subnet_cidr, destination, next_hop):
         """Adds a static route on a router which owns any interface with the router_cidr param
@@ -189,11 +219,19 @@ class OpenStackAgent(implements(VIMAgents)):
         ------
             VIMAgentsException
         """
-        logger.info("Configuring security policy rule on VIM %s! protocol=%s, port_range_min=%s, port_range_max=%s",
-                    self.ip_address, ip_proto, port_range_min, port_range_max)
-
         if ip_proto is None:
             msg = "IP Protocol must have a value!"
+            logger.error(msg)
+            raise VIMAgentsException(ERROR, msg)
+
+        ip_proto = int(ip_proto)
+
+        logger.info("Configuring security policy rule on VIM %s protocol=%s, port_range_min=%s, port_range_max=%s",
+                    self.ip_address, protocols[ip_proto], port_range_min, port_range_max)
+
+        if ip_proto not in protocols:
+            msg = "Protocol number %s not supported to configure traffic policies on VIM %s" \
+                  % (ip_proto, self.ip_address)
             logger.error(msg)
             raise VIMAgentsException(ERROR, msg)
 
@@ -206,12 +244,25 @@ class OpenStackAgent(implements(VIMAgents)):
 
         group_id = groups[0]['id']
 
-        ip_proto = int(ip_proto)
-        if ip_proto not in protocols:
-            msg = "Protocol number %s not supported to configure traffic policies on VIM %s" \
-                  % (ip_proto, self.ip_address)
-            logger.error(msg)
-            raise VIMAgentsException(ERROR, msg)
+        policy = {
+            "security_group_rule": {
+                "direction": "ingress",
+                # "port_range_min": "80",
+                "ethertype": "IPv4",
+                # "port_range_max": "80",
+                # "protocol": "tcp",
+                "protocol": protocols[ip_proto],
+                # "remote_ip_prefix": "0.0.0.0/0",
+                "security_group_id": group_id
+            }
+        }
+
+        if port_range_min is not None or port_range_max is not None:
+            port_range_min = int(port_range_min) if port_range_min is not None else int(port_range_max)
+            port_range_max = int(port_range_max) if port_range_max is not None else int(port_range_min)
+
+            policy['security_group_rule']['port_range_min'] = port_range_min
+            policy['security_group_rule']['port_range_max'] = port_range_max
 
         prev_rule = None
         for rule in groups[0]['security_group_rules']:
@@ -223,41 +274,11 @@ class OpenStackAgent(implements(VIMAgents)):
                 prev_rule = rule
                 break
 
-        # prev_rule = self.neutron.list_security_group_rules(security_group_id=group_id,
-        #                                                    project_id=self.project_id,
-        #                                                    direction='ingress',
-        #                                                    ethertype='IPv4',
-        #                                                    port_range_min=port_range_min,
-        #                                                    port_range_max=port_range_max,
-        #                                                    protocol=protocols[ip_proto])
-
-        # if not prev_rule['security_group_rules']:
-        if not prev_rule:
-            policy = {
-                "security_group_rule": {
-                    "direction": "ingress",
-                    # "port_range_min": "80",
-                    "ethertype": "IPv4",
-                    # "port_range_max": "80",
-                    # "protocol": "tcp",
-                    "protocol": protocols[ip_proto],
-                    # "remote_ip_prefix": "0.0.0.0/0",
-                    "security_group_id": group_id
-                }
-            }
-
-            if port_range_min is not None or port_range_max is not None:
-                policy['security_group_rule']['port_range_min'] = port_range_min \
-                    if port_range_min is not None else port_range_max
-                policy['security_group_rule']['port_range_max'] = port_range_max \
-                    if port_range_max is not None else port_range_min
-
-                policy['security_group_rule']['port_range_min'] = int(policy['security_group_rule']['port_range_min'])
-                policy['security_group_rule']['port_range_max'] = int(policy['security_group_rule']['port_range_max'])
+        if prev_rule is None:
 
             try:
                 result = self.neutron.create_security_group_rule(body=policy)
-                # result = self.neutron.delete_security_group_rule(prev_rule['security_group_rules'][0]['id'])
+
                 logger.info("Port opened! VIM=%s, rule_id=%s protocol=%s, port_range_min=%s, port_range_max=%s",
                             self.ip_address, result['security_group_rule']['id'], protocols[ip_proto],
                             port_range_min, port_range_max)
@@ -310,5 +331,5 @@ if __name__ == "__main__":
     # openstack.configure_networks()
     # openstack.configure_route("10.10.1.0/24", "179.24.1.0/24", "10.10.0.8")
     # openstack.configure_security_policies(6, 9090, 9090)
-    openstack.configure_security_policies(6, 9090, 9090)
     # openstack._get_router_by_ip_address('10.10.1.0/24')
+    openstack.get_fip_router_interfaces('net1')

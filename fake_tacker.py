@@ -16,19 +16,9 @@ class IdentityManager:
     """
 
     def __init__(self):
-        CONFIG_FILE = 'tacker.conf'
-        if not os.path.isfile(CONFIG_FILE):
-            logger.critical("Missing tacker.conf file!")
-            exit(1)
-
-        config = configparser.ConfigParser()
-        config.read(CONFIG_FILE)
-
-        self.OPENSTACK_URL = config.get('openstack', 'url')
-        self.USERNAME      = config.get('auth', 'username')
-        self.TENANT_NAME   = config.get('auth', 'tenant_name')
-        self.PASSWORD      = config.get('auth', 'password')
-        self.FIP_INTERFACES = config['sfc_fip_router_interface']
+        self.USERNAME      = "admin"
+        self.TENANT_NAME   = "admin"
+        self.PASSWORD      = "devstack"
 
         self.header = {
             'Content-type' : 'application/json',
@@ -36,14 +26,6 @@ class IdentityManager:
         }
 
         self.identity_info = self.get_identity_info()
-
-    def get_fip_router_interfaces(self):
-        """Return all FIP network configured interfaces in tacker.conf file
-
-        :return: a dictionary containing all FIP network configured interfaces in tacker.conf file
-        """
-
-        return self.FIP_INTERFACES
 
     def get_identity_info(self):
         """

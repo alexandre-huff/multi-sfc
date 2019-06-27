@@ -9,6 +9,9 @@ class VIMAgents(Interface):
     def configure_network(self, name, cidr):
         pass
 
+    def get_fip_router_interfaces(self, net_name):
+        pass
+
     def configure_route(self, router_subnet_cidr, destination, next_hop):
         pass
 

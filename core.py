@@ -1111,7 +1111,8 @@ class Core:
 
                 logger.info("Segment %s instantiated successfully!", segment_name)
 
-            self.configure_tunnels(sfc_data['sfc_uuid'], sfc_segments)
+            if len(sfc_segments) > 1:
+                self.configure_tunnels(sfc_data['sfc_uuid'], sfc_segments)
 
         except (NFVOAgentsException, DatabaseException, VIMAgentsException) as ex:
             return {'status': ex.status, 'reason': ex.reason}
@@ -1228,150 +1229,149 @@ class Core:
             DatabaseException, MultiSFCException, NFVOAgentsException, VIMAgentsException
         """
 
-        if len(sfc_segments) > 1:
-            logger.info("Configuring IP Tunnels for Multi-SFC %s", sfc_uuid)
+        logger.info("Configuring IP Tunnels for Multi-SFC %s", sfc_uuid)
 
-            nfvo_agent = self._get_nfvo_agent_instance(sfc_segments[0]['domain_id'], sfc_segments[0]['nfvo_id'])
+        nfvo_agent = self._get_nfvo_agent_instance(sfc_segments[0]['domain_id'], sfc_segments[0]['nfvo_id'])
 
-            # If there is src ip in the ACL, then use routing mode in tunnel, else configure nat mode
-            # In case of using routing mode, a static route with the source ip must be configured on the
-            # virtual router of the tunnel server side
-            # Each pair of segments must have different subnet ranges to configure the IP Tunnel
-            nat = True
-            policies = nfvo_agent.get_configured_policies(sfc_segments[0]['sfc_template'])
-            source_address = None
-            for policy in policies:
-                if 'src-ip-address' in policy or 'ip_src_prefix' in policy:
-                    nat = False
-                    try:
-                        source_address = policy['src-ip-address']
-                    except KeyError:
-                        source_address = policy['ip_src_prefix']
-                    break
+        # If there is src ip in the ACL, then use routing mode in tunnel, else configure nat mode
+        # In case of using routing mode, a static route with the source ip must be configured on the
+        # virtual router of the tunnel server side
+        # Each pair of segments must have different subnet ranges to configure the IP Tunnel
+        nat = True
+        policies = nfvo_agent.get_configured_policies(sfc_segments[0]['sfc_template'])
+        source_address = None
+        for policy in policies:
+            if 'src-ip-address' in policy or 'ip_src_prefix' in policy:
+                nat = False
+                try:
+                    source_address = policy['src-ip-address']
+                except KeyError:
+                    source_address = policy['ip_src_prefix']
+                break
 
-            # starts configuring from the second segment (first pair)
-            for i in range(1, len(sfc_segments)):
-                cur_segment = sfc_segments[i]
-                prev_segment = sfc_segments[i - 1]
+        # starts configuring from the second segment (first pair)
+        for i in range(1, len(sfc_segments)):
+            cur_segment = sfc_segments[i]
+            prev_segment = sfc_segments[i - 1]
 
-                tunnel_type = self._domain_catalog[cur_segment['domain_id']][cur_segment['nfvo_id']]['tunnel']
+            tunnel_type = self._domain_catalog[cur_segment['domain_id']][cur_segment['nfvo_id']]['tunnel']
 
-                # first VNF of current segment, it is also regarded as the tun server
-                server_db_segment = database.list_sfc_instances(multi_sfc_id=sfc_uuid, domain_id=cur_segment['domain_id'],
-                                                                nfvo_id=cur_segment['nfvo_id'])[0]
+            # first VNF of current segment, it is also regarded as the tun server
+            server_db_segment = database.list_sfc_instances(multi_sfc_id=sfc_uuid, domain_id=cur_segment['domain_id'],
+                                                            nfvo_id=cur_segment['nfvo_id'])[0]
 
-                tun_server_id = server_db_segment['vnf_instances'][0]  # getting the first VNF
+            tun_server_id = server_db_segment['vnf_instances'][0]  # getting the first VNF
 
-                # last VNF of previous segment, it is regarded as the tun client
-                tun_client_id = database.list_sfc_instances(multi_sfc_id=sfc_uuid, domain_id=prev_segment['domain_id'],
-                                                            nfvo_id=prev_segment['nfvo_id'])[0]['vnf_instances'][-1]
+            # last VNF of previous segment, it is regarded as the tun client
+            tun_client_id = database.list_sfc_instances(multi_sfc_id=sfc_uuid, domain_id=prev_segment['domain_id'],
+                                                        nfvo_id=prev_segment['nfvo_id'])[0]['vnf_instances'][-1]
 
-                # getting TUN Server VNF
-                server_nfvo_agent = self._get_nfvo_agent_instance(cur_segment['domain_id'], cur_segment['nfvo_id'])
-                tun_server_vnf = server_nfvo_agent.show_vnf(tun_server_id)
+            # getting TUN Server VNF
+            server_nfvo_agent = self._get_nfvo_agent_instance(cur_segment['domain_id'], cur_segment['nfvo_id'])
+            tun_server_vnf = server_nfvo_agent.show_vnf(tun_server_id)
 
-                # getting TUN Client VNF
-                client_nfvo_agent = self._get_nfvo_agent_instance(prev_segment['domain_id'], prev_segment['nfvo_id'])
-                tun_client_vnf = client_nfvo_agent.show_vnf(tun_client_id)
+            # getting TUN Client VNF
+            client_nfvo_agent = self._get_nfvo_agent_instance(prev_segment['domain_id'], prev_segment['nfvo_id'])
+            tun_client_vnf = client_nfvo_agent.show_vnf(tun_client_id)
 
-                # getting TUN vim agent and opening TUN's EM configuration port
-                server_vim_agent = server_nfvo_agent.get_vim_agent_instance()
-                server_vim_agent.configure_security_policies(TUN_EM_PROTO, TUN_EM_PORT, TUN_EM_PORT)
+            # getting TUN vim agent and opening TUN's EM configuration port
+            server_vim_agent = server_nfvo_agent.get_vim_agent_instance()
+            server_vim_agent.configure_security_policies(TUN_EM_PROTO, TUN_EM_PORT, TUN_EM_PORT)
 
-                if tunnel_type == 'vxlan':
+            if tunnel_type == 'vxlan':
 
-                    # opening VXLAN port on TUN server
-                    server_vim_agent.configure_security_policies(VXLAN_PROTO, VXLAN_PORT, VXLAN_PORT)
+                # opening VXLAN port on TUN server
+                server_vim_agent.configure_security_policies(VXLAN_PROTO, VXLAN_PORT, VXLAN_PORT)
 
-                    if i == 1:  # configure the previous segment only in the first loop
-                        client_vim_agent = client_nfvo_agent.get_vim_agent_instance()
-                        # opening port on VXLAN client
-                        client_vim_agent.configure_security_policies(TUN_EM_PROTO, TUN_EM_PORT, TUN_EM_PORT)
-                        client_vim_agent.configure_security_policies(VXLAN_PROTO, VXLAN_PORT, VXLAN_PORT)
+                if i == 1:  # configure the previous segment only in the first loop
+                    client_vim_agent = client_nfvo_agent.get_vim_agent_instance()
+                    # opening port on VXLAN client
+                    client_vim_agent.configure_security_policies(TUN_EM_PROTO, TUN_EM_PORT, TUN_EM_PORT)
+                    client_vim_agent.configure_security_policies(VXLAN_PROTO, VXLAN_PORT, VXLAN_PORT)
 
-                    try:
-                        vxlan_server = VXLANTunnel(tun_server_vnf['mgmt_address'], TUN_EM_PORT)
-                        vxlan_client = VXLANTunnel(tun_client_vnf['mgmt_address'], TUN_EM_PORT)
+                try:
+                    vxlan_server = VXLANTunnel(tun_server_vnf['mgmt_address'], TUN_EM_PORT)
+                    vxlan_client = VXLANTunnel(tun_client_vnf['mgmt_address'], TUN_EM_PORT)
 
-                    except TimeoutError as e:
-                        raise MultiSFCException(e)
+                except TimeoutError as e:
+                    raise MultiSFCException(e)
 
-                    tun_server_net = vxlan_server.get_networks()['response']
-                    tun_client_net = vxlan_client.get_networks()['response']
+                tun_server_net = vxlan_server.get_networks()['response']
+                tun_client_net = vxlan_client.get_networks()['response']
 
-                    # checking lan cidr, it still needs improvements
-                    if tun_server_net['lan_net'] == tun_client_net['lan_net']:
-                        msg = "IP tunnel LAN must differ! Tunnel not configured between %s and %s" \
-                              % (tun_client_net['wan_ip'], tun_server_net['wan_ip'])
-                        logger.error(msg)
-                        raise MultiSFCException(msg)
+                # checking lan cidr, it still needs improvements
+                if tun_server_net['lan_net'] == tun_client_net['lan_net']:
+                    msg = "IP tunnel LAN must differ! Tunnel not configured between %s and %s" \
+                          % (tun_client_net['wan_ip'], tun_server_net['wan_ip'])
+                    logger.error(msg)
+                    raise MultiSFCException(msg)
 
-                    vxlan_server.start(local_ip=tun_server_net['wan_ip'],
-                                       remote_ip=tun_client_net['wan_ip'],
-                                       server=True,
-                                       route_net_host=tun_client_net['lan_net'],
-                                       nat=nat)
+                vxlan_server.start(local_ip=tun_server_net['wan_ip'],
+                                   remote_ip=tun_client_net['wan_ip'],
+                                   server=True,
+                                   route_net_host=tun_client_net['lan_net'],
+                                   nat=nat)
 
-                    vxlan_client.start(local_ip=tun_client_net['wan_ip'],
-                                       remote_ip=tun_server_net['wan_ip'],
-                                       server=False,
-                                       route_net_host=tun_server_net['lan_net'],
-                                       nat=nat)
+                vxlan_client.start(local_ip=tun_client_net['wan_ip'],
+                                   remote_ip=tun_server_net['wan_ip'],
+                                   server=False,
+                                   route_net_host=tun_server_net['lan_net'],
+                                   nat=nat)
 
-                elif tunnel_type == 'ipsec':
+            elif tunnel_type == 'ipsec':
 
-                    # opening IPSec ports on TUN server
-                    server_vim_agent.configure_security_policies(IPSEC_PROTO, IPSEC_PORT, IPSEC_PORT)
-                    server_vim_agent.configure_security_policies(IPSEC_PROTO, IPSEC_CHARON_PORT, IPSEC_CHARON_PORT)
+                # opening IPSec ports on TUN server
+                server_vim_agent.configure_security_policies(IPSEC_PROTO, IPSEC_PORT, IPSEC_PORT)
+                server_vim_agent.configure_security_policies(IPSEC_PROTO, IPSEC_CHARON_PORT, IPSEC_CHARON_PORT)
 
-                    if i == 1:  # configure the previous segment only in the first loop
-                        client_vim_agent = client_nfvo_agent.get_vim_agent_instance()
-                        client_vim_agent.configure_security_policies(IPSEC_PROTO, IPSEC_PORT, IPSEC_PORT)
-                        client_vim_agent.configure_security_policies(IPSEC_PROTO, IPSEC_CHARON_PORT, IPSEC_CHARON_PORT)
+                if i == 1:  # configure the previous segment only in the first loop
+                    client_vim_agent = client_nfvo_agent.get_vim_agent_instance()
+                    client_vim_agent.configure_security_policies(IPSEC_PROTO, IPSEC_PORT, IPSEC_PORT)
+                    client_vim_agent.configure_security_policies(IPSEC_PROTO, IPSEC_CHARON_PORT, IPSEC_CHARON_PORT)
 
-                    try:
-                        ipsec_server = IPSecTunnel(tun_server_vnf['mgmt_address'], TUN_EM_PORT)
-                        ipsec_client = IPSecTunnel(tun_client_vnf['mgmt_address'], TUN_EM_PORT)
+                try:
+                    ipsec_server = IPSecTunnel(tun_server_vnf['mgmt_address'], TUN_EM_PORT)
+                    ipsec_client = IPSecTunnel(tun_client_vnf['mgmt_address'], TUN_EM_PORT)
 
-                    except TimeoutError as e:
-                        raise MultiSFCException(e)
+                except TimeoutError as e:
+                    raise MultiSFCException(e)
 
-                    tun_server_net = ipsec_server.get_networks()['response']
-                    tun_client_net = ipsec_client.get_networks()['response']
+                tun_server_net = ipsec_server.get_networks()['response']
+                tun_client_net = ipsec_client.get_networks()['response']
 
-                    # checking lan cidr, it must be improved
-                    if tun_server_net['lan_net'] == tun_client_net['lan_net']:
-                        msg = "IP tunnel LAN must differ! Tunnel not configured between %s and %s" \
-                              % (tun_client_net['wan_ip'], tun_server_net['wan_ip'])
-                        logger.error(msg)
-                        raise MultiSFCException(msg)
+                # checking lan cidr, it must be improved
+                if tun_server_net['lan_net'] == tun_client_net['lan_net']:
+                    msg = "IP tunnel LAN must differ! Tunnel not configured between %s and %s" \
+                          % (tun_client_net['wan_ip'], tun_server_net['wan_ip'])
+                    logger.error(msg)
+                    raise MultiSFCException(msg)
 
-                    ipsec_server.start(local_ip=tun_server_net['wan_ip'],
-                                       remote_ip=tun_client_net['wan_ip'],
-                                       local_lan=tun_server_net['lan_net'],
-                                       remote_lan=tun_client_net['lan_net'],
-                                       nat=nat)
+                ipsec_server.start(local_ip=tun_server_net['wan_ip'],
+                                   remote_ip=tun_client_net['wan_ip'],
+                                   local_lan=tun_server_net['lan_net'],
+                                   remote_lan=tun_client_net['lan_net'],
+                                   nat=nat)
 
-                    ipsec_client.start(local_ip=tun_client_net['wan_ip'],
-                                       remote_ip=tun_server_net['wan_ip'],
-                                       local_lan=tun_client_net['lan_net'],
-                                       remote_lan=tun_server_net['lan_net'],
-                                       nat=nat)
+                ipsec_client.start(local_ip=tun_client_net['wan_ip'],
+                                   remote_ip=tun_server_net['wan_ip'],
+                                   local_lan=tun_client_net['lan_net'],
+                                   remote_lan=tun_server_net['lan_net'],
+                                   nat=nat)
 
-                else:
-                    raise MultiSFCException("Tunnel type '%s' not implemented!" % tunnel_type)
+            else:
+                raise MultiSFCException("Tunnel type '%s' not implemented!" % tunnel_type)
 
-                # configuring router to steer traffic back to the tunnel
-                if not nat:
-                    if '/' not in source_address:
-                        source_address = ''.join([source_address, '/32'])
+            # configuring router to steer traffic back to the tunnel
+            if not nat:
+                if '/' not in source_address:
+                    source_address = ''.join([source_address, '/32'])
 
-                    server_vim_agent.configure_route(tun_server_net['lan_net'],
-                                                     source_address,
-                                                     tun_server_net['lan_ip'])
-                    route = {
-                        'subnet_cidr': tun_server_net['lan_net'],
-                        'destination': source_address,
-                        'next_hop': tun_server_net['lan_ip']
-                    }
-                    database.update_sfc_instance(server_db_segment['_id'], routing=route)
+                server_vim_agent.configure_route(tun_server_net['lan_net'],
+                                                 source_address,
+                                                 tun_server_net['lan_ip'])
+                route = {
+                    'subnet_cidr': tun_server_net['lan_net'],
+                    'destination': source_address,
+                    'next_hop': tun_server_net['lan_ip']
+                }
+                database.update_sfc_instance(server_db_segment['_id'], routing=route)
