@@ -15,5 +15,5 @@ class VIMAgents(Interface):
     def remove_route(self, router_subnet_cidr, destination, next_hop):
         pass
 
-    def configure_security_policies(self):
+    def configure_security_policies(self, ip_proto, port_range_min=None, port_range_max=None):
         pass

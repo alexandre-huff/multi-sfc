@@ -40,6 +40,22 @@ GENERAL_VNF = 'general'
 TACKER_NFVO = 'tacker'
 OSM_NFVO    = 'osm'
 
+IPSEC_PROTO = 17
+IPSEC_PORT = 500
+IPSEC_CHARON_PORT = 4500
+
+VXLAN_PROTO = 17
+VXLAN_PORT = 4789
+
+TUN_EM_PROTO = 6
+TUN_EM_PORT = 8000
+
+protocols = {
+    1: 'icmp',
+    6: 'tcp',
+    17: 'udp'
+}
+
 
 # Returns an unique ID
 def unique_id():

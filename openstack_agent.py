@@ -6,7 +6,7 @@ from interface import implements
 from neutronclient.common.exceptions import NeutronClientException
 
 from exceptions import VIMAgentsException
-from utils import ERROR
+from utils import ERROR, protocols
 from vim_agents import VIMAgents
 
 from keystoneauth1.identity import v3
@@ -178,11 +178,97 @@ class OpenStackAgent(implements(VIMAgents)):
         # check if network name and cidr are configure in VIM, if not it configures the network
         raise NotImplementedError
 
-    def configure_security_policies(self):
-        groups = self.neutron.list_security_groups()
-        rules = self.neutron.list_security_group_rules()
+    def configure_security_policies(self, ip_proto, port_range_min=None, port_range_max=None):
+        """Adds a security policy rule on the openstack to allow traffic incoming into VNFs and SFCs
 
-        print("")
+        :param ip_proto: IP protocol number
+        :param port_range_min:
+        :param port_range_max:
+
+        Raises
+        ------
+            VIMAgentsException
+        """
+        logger.info("Configuring security policy rule on VIM %s! protocol=%s, port_range_min=%s, port_range_max=%s",
+                    self.ip_address, ip_proto, port_range_min, port_range_max)
+
+        if ip_proto is None:
+            msg = "IP Protocol must have a value!"
+            logger.error(msg)
+            raise VIMAgentsException(ERROR, msg)
+
+        groups = self.neutron.list_security_groups(project_id=self.project_id, name='default')['security_groups']
+
+        if not groups:
+            msg = "Default security group not found for tenant '%s' on VIM '%s'" % (self.project_id, self.ip_address)
+            logger.error(msg)
+            raise VIMAgentsException(ERROR, msg)
+
+        group_id = groups[0]['id']
+
+        ip_proto = int(ip_proto)
+        if ip_proto not in protocols:
+            msg = "Protocol number %s not supported to configure traffic policies on VIM %s" \
+                  % (ip_proto, self.ip_address)
+            logger.error(msg)
+            raise VIMAgentsException(ERROR, msg)
+
+        prev_rule = None
+        for rule in groups[0]['security_group_rules']:
+            if rule['direction'] == 'ingress' \
+                    and rule['ethertype'] == 'IPv4' \
+                    and rule['protocol'] == protocols[ip_proto] \
+                    and rule['port_range_min'] == port_range_min \
+                    and rule['port_range_max'] == port_range_max:
+                prev_rule = rule
+                break
+
+        # prev_rule = self.neutron.list_security_group_rules(security_group_id=group_id,
+        #                                                    project_id=self.project_id,
+        #                                                    direction='ingress',
+        #                                                    ethertype='IPv4',
+        #                                                    port_range_min=port_range_min,
+        #                                                    port_range_max=port_range_max,
+        #                                                    protocol=protocols[ip_proto])
+
+        # if not prev_rule['security_group_rules']:
+        if not prev_rule:
+            policy = {
+                "security_group_rule": {
+                    "direction": "ingress",
+                    # "port_range_min": "80",
+                    "ethertype": "IPv4",
+                    # "port_range_max": "80",
+                    # "protocol": "tcp",
+                    "protocol": protocols[ip_proto],
+                    # "remote_ip_prefix": "0.0.0.0/0",
+                    "security_group_id": group_id
+                }
+            }
+
+            if port_range_min is not None or port_range_max is not None:
+                policy['security_group_rule']['port_range_min'] = port_range_min \
+                    if port_range_min is not None else port_range_max
+                policy['security_group_rule']['port_range_max'] = port_range_max \
+                    if port_range_max is not None else port_range_min
+
+                policy['security_group_rule']['port_range_min'] = int(policy['security_group_rule']['port_range_min'])
+                policy['security_group_rule']['port_range_max'] = int(policy['security_group_rule']['port_range_max'])
+
+            try:
+                result = self.neutron.create_security_group_rule(body=policy)
+                # result = self.neutron.delete_security_group_rule(prev_rule['security_group_rules'][0]['id'])
+                logger.info("Port opened! VIM=%s, rule_id=%s protocol=%s, port_range_min=%s, port_range_max=%s",
+                            self.ip_address, result['security_group_rule']['id'], protocols[ip_proto],
+                            port_range_min, port_range_max)
+
+            except NeutronClientException as e:
+                logger.error("VIM %s: %s", self.ip_address, e.message)
+                raise VIMAgentsException(ERROR, e.message)
+
+        else:
+            logger.debug("A security group rule was already added with id %s",
+                         prev_rule['id'])  # prev_rule['security_group_rules'][0]['id'])
 
     def list_vms(self):
         servers = self.nova.servers.list()
@@ -223,5 +309,6 @@ if __name__ == "__main__":
     # print(vms)
     # openstack.configure_networks()
     # openstack.configure_route("10.10.1.0/24", "179.24.1.0/24", "10.10.0.8")
-    openstack.configure_security_policies()
+    # openstack.configure_security_policies(6, 9090, 9090)
+    openstack.configure_security_policies(6, 9090, 9090)
     # openstack._get_router_by_ip_address('10.10.1.0/24')

@@ -436,7 +436,7 @@ class OSMAgent(implements(NFVOAgents)):
         return template
 
     def get_configured_policies(self, sfc_descriptor):
-        """Retrieves the configures policies in the sfc descriptor
+        """Retrieves configured policies in the sfc descriptor
 
         :return: a list containing key:value elements
         """
@@ -448,6 +448,26 @@ class OSMAgent(implements(NFVOAgents)):
             items.append({item: criteria[item]})
 
         return items
+
+    def get_sfc_input_security_policy_data(self, sfc_descriptor):
+        """Retrieves security policy data required to configure security policies
+
+        :param sfc_descriptor:
+        :return: IP protocol number, port_range_min, port_range_max
+        """
+        criteria = self.get_configured_policies(sfc_descriptor)
+        proto = None
+        min_port = None
+        max_port = None
+
+        for item in criteria:
+            if 'ip-proto' in item:
+                proto = item['ip-proto']
+            elif 'destination-port' in item:
+                min_port = item['destination-port']
+                max_port = item['destination-port']
+
+        return proto, min_port, max_port
 
     def add_constituent_vnf_and_virtual_link(self, sfc_descriptor, vnfd_name, vnf_nsd, input_vnf=False):
         """Adds VNF and its VL to the NSD

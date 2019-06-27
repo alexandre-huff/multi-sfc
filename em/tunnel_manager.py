@@ -7,10 +7,12 @@ import logging
 import os
 import sys
 import inspect
+from exceptions import MultiSFCException
+
 current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
-from utils import socket_polling, ERROR
+from utils import socket_polling, OK
 
 headers = {'Content-Type': 'application/json'}
 
@@ -53,6 +55,11 @@ class VXLANTunnel:
         :param route_net_host: the route to be installed to route vxlan traffic to the remote host
         :param nat: True if use MASQUERADE, False otherwise
         :return:
+
+
+        Raises
+        ------
+            MultiSFCException
         """
         data = {
             'type': 'vxlan',
@@ -76,16 +83,25 @@ class VXLANTunnel:
 
         if result.status_code != 200:
             msg = result.content.decode('utf-8')
-            logger.warning(msg)
-            return {'status': ERROR, 'response': msg}
+            logger.error(msg)
+            raise MultiSFCException(msg)
 
         result = result.json()
-        if result['status'] == ERROR:
-            logger.warning(result['response'])
+        if result['status'] != OK:
+            logger.error(result['response'])
+            raise MultiSFCException(result['response'])
 
         return result
 
     def stop(self):
+        """Stops one endpoint of a VXLAN Tunnel
+
+        :return:
+
+        Raises
+        ------
+            MultiSFCException
+        """
         data = {
             'type': 'vxlan',
             'action': 'stop'
@@ -94,12 +110,13 @@ class VXLANTunnel:
 
         if result.status_code != 200:
             msg = result.content.decode('utf-8')
-            logger.warning(msg)
-            return {'status': ERROR, 'response': msg}
+            logger.error(msg)
+            raise MultiSFCException(msg)
 
         result = result.json()
-        if result['status'] == ERROR:
-            logger.warning(result['response'])
+        if result['status'] != OK:
+            logger.error(result['response'])
+            raise MultiSFCException(result['response'])
 
         return result
 
@@ -130,6 +147,10 @@ class IPSecTunnel:
         :param remote_lan: e.g. 10.10.1.0/24
         :param nat: True if use MASQUERADE, False otherwise
         :return:
+
+        Raises
+        ------
+            MultiSFCException
         """
         data = {
             'type': 'ipsec',
@@ -145,12 +166,13 @@ class IPSecTunnel:
 
         if result.status_code != 200:
             msg = result.content.decode('utf-8')
-            logger.warning(msg)
-            return {'status': ERROR, 'response': msg}
+            logger.error(msg)
+            raise MultiSFCException(msg)
 
         result = result.json()
-        if result['status'] == ERROR:
-            logger.warning(result['response'])
+        if result['status'] != OK:
+            logger.error(result['response'])
+            raise MultiSFCException(result['response'])
 
         return result
 

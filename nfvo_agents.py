@@ -30,6 +30,9 @@ class NFVOAgents(Interface):
     def get_configured_policies(self, sfc_descriptor):
         pass
 
+    def get_sfc_input_security_policy_data(self, sfc_descriptor):
+        pass
+
     def compose_sfp(self, sfc_descriptor, vnfd_name, vnfp_dir, database, options_cp_out):
         pass
 

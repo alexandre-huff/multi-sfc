@@ -834,6 +834,28 @@ class TackerAgent(implements(NFVOAgents)):
 
         return criteria
 
+    def get_sfc_input_security_policy_data(self, sfc_descriptor):
+        """Retrieves security policy data required to configure security policies
+
+        :param sfc_descriptor:
+        :return: IP protocol number, port_range_min, port_range_max
+        """
+        criteria = self.get_configured_policies(sfc_descriptor)
+        proto = None
+        min_port = None
+        max_port = None
+
+        for item in criteria:
+            if 'ip_proto' in item:
+                proto = item['ip_proto']
+            elif 'destination_port_range' in item:
+                dst_range = item['destination_port_range']
+                dst_range = dst_range.split(sep='-')
+                min_port = dst_range[0]
+                max_port = dst_range[1]
+
+        return proto, min_port, max_port
+
     def list_vnf_pkg_cps(self, vnfp_dir):
         """Retrieve all connection points of a VNF Package stored in repository
 
