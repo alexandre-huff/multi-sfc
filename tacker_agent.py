@@ -6,15 +6,19 @@ import yaml
 import logging
 
 from multiprocessing.pool import Pool
-from exceptions import NFVOAgentsException, NFVOAgentOptions, DatabaseException
+from exceptions import NFVOAgentsException, NFVOAgentOptions, VIMAgentsException
 from nfvo_agents import NFVOAgents
 from interface import implements
 
-from utils import OK, ERROR, ACTIVE, TIMEOUT, TACKER_NFVO, INTERNAL, EXTERNAL, unique_id, status
+from openstack_agent import OpenStackAgent
+from utils import OK, ERROR, ACTIVE, TIMEOUT, TACKER_NFVO, INTERNAL, EXTERNAL, status
 from tacker import IdentityManager, Tacker
 # The package fake_tacker should be used for performance testing or demo purposes. It takes out Tacker NFVO requests
 # Also see in the beginning of the "create_vnf" function in "Core" class.
 # from fake_tacker import IdentityManager, Tacker
+
+
+REACHABLE = "REACHABLE"
 
 
 logger = logging.getLogger('tacker_agent')
@@ -23,14 +27,63 @@ logger = logging.getLogger('tacker_agent')
 class TackerAgent(implements(NFVOAgents)):
     """Implementation of the Tacker Agent."""
 
-    def __init__(self):
-        self.timeout = 300
+    def __init__(self, host, username, password, tenant_name, vim_name, vim_username, vim_password,
+                 domain_id, domain_name, nfvo_id, nfvo_name):
+        self.vim_name = vim_name
+        self._vim_username = vim_username
+        self._vim_password = vim_password
 
-        self.identity = IdentityManager()
+        self.nfvo_name = nfvo_name
+        self.domain_name = domain_name
+        self.domain_id = domain_id
+        self.nfvo_id = nfvo_id
+
+        self.identity = IdentityManager(host, username, password, tenant_name)
         token = self.identity.get_token()
         tacker_ep = self.identity.get_endpoints()['tacker']
 
         self.tacker = Tacker(token, tacker_ep)
+
+        self.vim_id = self._get_vim_id()
+
+    def _get_vim_id(self):
+        response = self.tacker.vim_list()
+        if response.status_code != 200:
+            raise NFVOAgentsException(ERROR, status[response.status_code])
+
+        vims = response.json()['vims']
+
+        for vim in vims:
+            if vim['name'] == self.vim_name:
+                return vim['id']
+
+        msg = "VIM '%s' not found in '%s' platform!" % (self.vim_name, self.nfvo_name)
+        logger.critical(msg)
+        exit(1)
+
+    def get_vim_agent_instance(self):
+        """Instantiates a VIM Agent
+
+        Raises
+        ------
+            NFVOAgentsException
+        """
+        response = self.tacker.vim_show(self.vim_id)
+        if response.status_code != 200:
+            raise NFVOAgentsException(ERROR, status[response.status_code])
+
+        vim_data = response.json()['vim']
+        if vim_data['type'] != 'openstack':
+            msg = "VIM type %s not supported." % vim_data['type']
+            logger.error(msg)
+            raise NFVOAgentsException(ERROR, msg)
+
+        vim_agent = OpenStackAgent(vim_data['auth_url'],
+                                   self._vim_username,
+                                   self._vim_password,
+                                   vim_data['vim_project']['name']
+                                   )
+        return vim_agent
 
     @staticmethod
     def vnfd_json_yaml_parser(vnfd):
@@ -130,8 +183,22 @@ class TackerAgent(implements(NFVOAgents)):
         ------
             NFVOAgentsException
         """
+        response = self.tacker.vim_show(self.vim_id)
+        if response.status_code != 200:
+            raise NFVOAgentsException(ERROR, status[response.status_code])
 
-        response = self.tacker.vnf_create(vnfd_id, vnf_name)
+        vim = response.json()['vim']
+
+        if not vim:
+            raise NFVOAgentsException(ERROR, "VIM name '%s' not found in '%s'!" % (self.vim_name, self.nfvo_name))
+
+        vim_status = vim['status']
+
+        if vim_status != REACHABLE:
+            raise NFVOAgentsException(ERROR, "VIM status of '%s' is '%s' in '%s' platform!"
+                                      % (self.vim_name, vim_status, self.nfvo_name))
+
+        response = self.tacker.vnf_create(vnfd_id, vnf_name, self.vim_id)
 
         if response.status_code != 201:
             error_reason = 'VNF could not be created: %s' % status[response.status_code]
@@ -154,7 +221,7 @@ class TackerAgent(implements(NFVOAgents)):
         """
         # IMPORTANT: This is not related to Click VNF Functions. Do not confuse it!
 
-        timeout = self.timeout
+        timeout = 300
         sleep_interval = 2
 
         while timeout > 0:
@@ -162,8 +229,6 @@ class TackerAgent(implements(NFVOAgents)):
             vnf_status = response.json()['vnf']['status']
 
             if vnf_status == ACTIVE:
-                # TODO: what is the better way to retrieve VNF IP? It may change
-                #       depending on the VNF descriptor.
                 vnf_ip = json.loads(response.json()['vnf']['mgmt_url'])['VDU1']
                 return vnf_ip
 
@@ -222,11 +287,17 @@ class TackerAgent(implements(NFVOAgents)):
             logger.info('Using an existing VNF descriptor id %s!', vnfd_id)
 
         # Generating a unique VNF name to avoid Tacker Internal Server Error
+        response = self.tacker.vnf_list()
+
+        if response.status_code != 200:
+            raise NFVOAgentsException(ERROR, status[response.status_code])
+
+        vnfs = response.json()['vnfs']
+
         seq = 1
         vnf_name = ''.join([vnf_name, '-', str(seq)])
-        vnfs = self.list_vnfs()
         while True:
-            vnf_list = [vnf for vnf in vnfs if vnf['vnf_name'] == vnf_name]
+            vnf_list = [vnf for vnf in vnfs if vnf['name'] == vnf_name]
             if len(vnf_list) > 0:
                 seq += 1
                 vnf_name = vnf_name[:-1] + str(seq)
@@ -246,7 +317,7 @@ class TackerAgent(implements(NFVOAgents)):
             # in case of error on deleting VNFD
             except NFVOAgentsException as ex:
                 logger.error(ex.reason)
-                e.reason = ''.join([e.reason, ' ', ex.reason])
+                e.reason = ' '.join([e.reason, ex.reason])
 
             raise NFVOAgentsException(e.status, e.reason)
 
@@ -265,8 +336,8 @@ class TackerAgent(implements(NFVOAgents)):
 
         return {
             'vnfd_id': vnfd_id,
-            'vnf_id' : vnf_id,
-            'vnf_ip' : vnf_ip
+            'vnf_id': vnf_id,
+            'vnf_ip': vnf_ip
         }
 
     def destroy_vnf(self, vnf_id):
@@ -303,9 +374,10 @@ class TackerAgent(implements(NFVOAgents)):
             raise NFVOAgentsException(ERROR, error_reason)
 
         #  pooling waiting to remove successfully this VNF
-        SLEEP_TIME = 2
-        while self.timeout > 0:
-            time.sleep(SLEEP_TIME)
+        timeout = 300
+        sleep_interval = 2
+        while timeout > 0:
+            time.sleep(sleep_interval)
             vnf = self.tacker.vnf_show(vnf_id)
 
             if vnf.status_code == 200:
@@ -324,7 +396,7 @@ class TackerAgent(implements(NFVOAgents)):
                 logger.error(error_reason)
                 raise NFVOAgentsException(ERROR, error_reason)
 
-            self.timeout -= SLEEP_TIME
+            timeout -= sleep_interval
 
         self.delete_vnfd(vnfd_id)
 
@@ -364,8 +436,19 @@ class TackerAgent(implements(NFVOAgents)):
             vnfd_id = vnf['vnfd_id']
             vnf_status = vnf['status']
 
-            vnfs.append({'vnf_id': vnf_id, 'vnf_name': vnf_name, 'instance_name': instance_name,
-                         'mgmt_url': mgmt_url, 'vnfd_id': vnfd_id, 'vnf_status': vnf_status, 'platform': TACKER_NFVO})
+            if vnf['vim_id'] == self.vim_id:
+                vnfs.append({
+                    'vnf_id': vnf_id,
+                    'vnf_name': vnf_name,
+                    'instance_name': instance_name,
+                    'mgmt_url': mgmt_url,
+                    'vnfd_id': vnfd_id,
+                    'vnf_status': vnf_status,
+                    'platform': TACKER_NFVO,
+                    'domain_name': self.domain_name,
+                    'nfvo_name': self.nfvo_name,
+                    'vim_name': self.vim_name
+                })
 
         return vnfs
 
@@ -380,22 +463,28 @@ class TackerAgent(implements(NFVOAgents)):
             NFVOAgentsException
         """
         response = self.tacker.vnf_show(vnf_id)
-        if response.status_code != 200:
+        if response.status_code not in (200, 404):
             raise NFVOAgentsException(ERROR, status[response.status_code])
 
-        response = response.json()['vnf']
-
         vnf = {}
-        for k, v in iter(response.items()):
-            if k in ('id', 'name', 'status', 'vnfd_id', 'error_reason', 'description', 'instance_id'):
-                vnf[k] = v
-        mgmt_url = json.loads(response['mgmt_url'])['VDU1']
-        instance = response['attributes']['heat_template']
-        instance = yaml.load(instance)
-        instance_name = instance['resources']['VDU1']['properties']['name']
 
-        vnf['mgmt_url'] = mgmt_url
-        vnf['instance_name'] = instance_name
+        if response.status_code == 200:
+            response = response.json()['vnf']
+            # for k, v in iter(response.items()):
+            #     if k in ('id', 'name', 'status', 'vnfd_id', 'error_reason', 'description', 'instance_id'):
+            #         vnf[k] = v
+            mgmt_url = json.loads(response['mgmt_url'])['VDU1']
+            instance = response['attributes']['heat_template']
+            instance = yaml.full_load(instance)
+            instance_name = instance['resources']['VDU1']['properties']['name']
+
+            vnf['id'] = response['id']
+            vnf['name'] = response['name']
+            vnf['status'] = response['status']
+            vnf['error_reason'] = response['error_reason']
+            vnf['vnfd_id'] = response['vnfd_id']
+            vnf['mgmt_address'] = mgmt_url
+            vnf['vm_name'] = instance_name
 
         return vnf
 
@@ -460,6 +549,7 @@ class TackerAgent(implements(NFVOAgents)):
         response = self.tacker.vnffgd_delete(vnffgd_id)
 
         if response.status_code != 204:
+            logger.error(status[response.status_code])
             raise NFVOAgentsException(ERROR, status[response.status_code])
 
         logger.info("VNFFGD %s removed successfully!", vnffgd_id)
@@ -525,6 +615,7 @@ class TackerAgent(implements(NFVOAgents)):
         response = self.tacker.vnffg_delete(vnffg_id)
 
         if response.status_code != 204:
+            logger.error(status[response.status_code])
             raise NFVOAgentsException(ERROR, status[response.status_code])
 
         logger.info("VNFFG %s destroyed successfully!", vnffg_id)
@@ -592,13 +683,16 @@ class TackerAgent(implements(NFVOAgents)):
         ------
             NFVOAgentsException
         """
-        net_interfaces = self.identity.get_fip_router_interfaces()
-        if net_name not in net_interfaces:
-            msg = "Router Floating IP interface not configured for '%s' network in tacker.conf" % net_name
+        vim_agent = self.get_vim_agent_instance()
+
+        try:
+            src_port_id = vim_agent.get_fip_router_interfaces(net_name)
+        except VIMAgentsException as e:
+            msg = "Router Floating IP interface not configured for network '%s'. %s" % (net_name, e.reason)
             logger.error(msg)
             raise NFVOAgentsException(ERROR, msg)
 
-        return net_interfaces[net_name]
+        return src_port_id
 
     def select_and_validate_cp_out(self, options_cp_out, vnf_pkg_cps, cp_in):
         """Selects and validates the CP_out based on Tacker NFVO requirements
@@ -731,6 +825,39 @@ class TackerAgent(implements(NFVOAgents)):
                 }
             }
         }
+
+    def get_configured_policies(self, sfc_descriptor):
+        """Retrieves the configures policies in the sfc descriptor
+
+        :return: a list containing key:value elements
+        """
+
+        topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
+        criteria = topology_template['node_templates']['Forwarding_path1']['properties']['policy']['criteria']
+
+        return criteria
+
+    def get_sfc_input_security_policy_data(self, sfc_descriptor):
+        """Retrieves security policy data required to configure security policies
+
+        :param sfc_descriptor:
+        :return: IP protocol number, port_range_min, port_range_max
+        """
+        criteria = self.get_configured_policies(sfc_descriptor)
+        proto = None
+        min_port = None
+        max_port = None
+
+        for item in criteria:
+            if 'ip_proto' in item:
+                proto = item['ip_proto']
+            elif 'destination_port_range' in item:
+                dst_range = item['destination_port_range']
+                dst_range = dst_range.split(sep='-')
+                min_port = dst_range[0]
+                max_port = dst_range[1]
+
+        return proto, min_port, max_port
 
     def list_vnf_pkg_cps(self, vnfp_dir):
         """Retrieve all connection points of a VNF Package stored in repository
@@ -896,6 +1023,33 @@ class TackerAgent(implements(NFVOAgents)):
 
         raise NFVOAgentsException(ERROR, 'VNF Resource ID not found!')
 
+    def get_sfc_traffic_origin(self, core):
+        # fields defines which information should be shown dynamically by client applications
+        fields = [
+            {'id': 'ID'},
+            {'name': 'Name'},
+            {'instance': 'Instance Name'},
+            {'address': 'Mgmt Address'},
+            {'status': 'Status'},
+            {'platform': 'Platform'}
+        ]
+
+        vnfs = self.list_vnfs()
+
+        src_vnfs = []
+        for vnf in vnfs:
+                src_vnf = {
+                    'id': vnf.get('vnf_id'),
+                    'name': vnf.get('vnf_name'),
+                    'instance': vnf.get('instance_name'),
+                    'address': vnf.get('mgmt_url'),
+                    'status': vnf.get('vnf_status'),
+                    'platform': TACKER_NFVO
+                }
+                src_vnfs.append(src_vnf)
+
+        return fields, src_vnfs
+
     def configure_traffic_src_policy(self, sfc_descriptor, origin, src_id, cp_out, database):
         """
         Includes ACL criteria according to INTERNAL or EXTERNAL traffic source
@@ -980,8 +1134,7 @@ class TackerAgent(implements(NFVOAgents)):
             criteria.append({'network_src_port_id': resource_id})
 
         elif origin == EXTERNAL:
-            data = self.tacker_agent.get_fip_router_interface_id(
-                sfp_first_vnf_cps[sfp_cps[0]]['network_name'])
+            data = self.get_fip_router_interface_id(sfp_first_vnf_cps[sfp_cps[0]]['network_name'])
 
             criteria.append({'network_src_port_id': data})
 
@@ -1034,8 +1187,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
 
-        criteria = topology_template['node_templates']['Forwarding_path1'] \
-            ['properties']['policy']['criteria']
+        criteria = topology_template['node_templates']['Forwarding_path1']['properties']['policy']['criteria']
 
         acl = self.acl_criteria_parser(acl)
 
@@ -1060,13 +1212,13 @@ class TackerAgent(implements(NFVOAgents)):
 
         last_path_id = 0
         for item in data:
-            path_id = item['template']['vnffgd']['topology_template'] \
-                ['node_templates']['Forwarding_path1']['properties']['id']
+            path_id = item['template']['vnffgd']['topology_template'][
+                'node_templates']['Forwarding_path1']['properties']['id']
             if path_id > last_path_id:
                 last_path_id = path_id
 
-        vnffgd['vnffgd']['template']['vnffgd']['topology_template'] \
-            ['node_templates']['Forwarding_path1']['properties']['id'] = last_path_id + 1
+        vnffgd['vnffgd']['template']['vnffgd']['topology_template'][
+            'node_templates']['Forwarding_path1']['properties']['id'] = last_path_id + 1
 
         return vnffgd
 
@@ -1107,6 +1259,7 @@ class TackerAgent(implements(NFVOAgents)):
         :param database:
         :param core:
         :param sfc_uuid: the unique identifier of the composed SFC to be started
+        :param sfc_name: the name of the SFC being instantiated (optional)
 
         :return: a dict containing:
 
@@ -1133,8 +1286,8 @@ class TackerAgent(implements(NFVOAgents)):
         vnf_instance_list = []
         vnf_mapping = {}
 
-        constituent_vnfs = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template'] \
-            ['groups']['VNFFG1']['properties']['constituent_vnfs']
+        constituent_vnfs = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template'][
+            'groups']['VNFFG1']['properties']['constituent_vnfs']
         # configuring VNFFGD unique name
         sfc_descriptor['vnffgd']['name'] = sfc_name
 
@@ -1144,7 +1297,12 @@ class TackerAgent(implements(NFVOAgents)):
             data = database.list_catalog(vnfd_name=vnfd_name)
 
             # Second argument states that the called function is in a subprocess
-            subprocess_pkgs.append([data[0]['_id'], True])
+            vnfp_data = {
+                'vnfp_id': data[0]['_id'],
+                'domain_id': self.domain_id,
+                'nfvo_id': self.nfvo_id
+            }
+            subprocess_pkgs.append([vnfp_data, True])
 
         processes = Pool(len(subprocess_pkgs))
 
@@ -1208,18 +1366,6 @@ class TackerAgent(implements(NFVOAgents)):
             'nsd_id': vnffgd_id,
             'ns_id': vnffg_id
         }
-        # try:
-        #     database.insert_sfc_instance(vnf_instance_list, vnffgd_id, vnffg_id, TACKER_NFVO)
-        #
-        # # Rollback actions
-        # except DatabaseException as dbe:
-        #     # this function raises an NFVOAgentsException and don't need to be caught,
-        #     # either way, the code after it won't run
-        #     self.destroy_vnffg(vnffg_id)
-        #
-        #     message = self.sfc_rollback_actions(vnf_instance_list, core, vnffgd_id)
-        #     message = ' '.join([dbe.reason, message])
-        #     raise NFVOAgentsException(dbe.status, message)
 
     def destroy_sfc(self, sfc_id, core):
         """Destroy the VNFFG and its VNFs
@@ -1250,7 +1396,7 @@ class TackerAgent(implements(NFVOAgents)):
         # destroying VNFFG
         self.destroy_vnffg(sfc_id)
 
-        # TODO: How many time should we wait before remove the VNFFGD?
+        # How many time should we wait before remove the VNFFGD?
         time.sleep(2)
 
         # destroying VNFFGD
@@ -1268,4 +1414,4 @@ class TackerAgent(implements(NFVOAgents)):
             raise NFVOAgentsException(ERROR, message)
 
     def dump_sfc_descriptor(self, sfc_descriptor):
-        return json.dumps(sfc_descriptor, indent=4, sort_keys=True)
+        return json.dumps(sfc_descriptor, indent=2, sort_keys=True)

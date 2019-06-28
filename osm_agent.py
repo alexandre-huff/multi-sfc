@@ -9,10 +9,15 @@ from time import sleep, time
 from exceptions import NFVOAgentsException
 from nfvo_agents import NFVOAgents
 from interface import implements
-from utils import OSM_NFVO, ERROR, TIMEOUT, EXTERNAL, INTERNAL, unique_id
+from openstack_agent import OpenStackAgent
+from utils import OSM_NFVO, ERROR, TIMEOUT, INTERNAL, ANY
 
 from osmclient.sol005 import client as osm
 from osmclient.common.exceptions import NotFound, ClientException
+
+
+# NSD operation-status on OSM
+FAILED = 'failed'
 
 
 logger = logging.getLogger('osm_agent')
@@ -21,8 +26,17 @@ logger = logging.getLogger('osm_agent')
 class OSMAgent(implements(NFVOAgents)):
     """Implementation of the OSM Agent."""
 
-    def __init__(self):
-        self.client = osm.Client(host='200.17.212.239')
+    def __init__(self, host, username, password, tenant_name, vim_name, domain_id, domain_name, nfvo_id, nfvo_name):
+
+        self.client = osm.Client(host=host, user=username, password=password, so_project=tenant_name)
+
+        self.vim_name = vim_name
+        self.nfvo_name = nfvo_name
+        self.domain_name = domain_name
+        self.domain_id = domain_id
+        self.nfvo_id = nfvo_id
+
+        self.vim_id = self._get_vim_id()
 
     def _get_repository_nsd_content(self, dir_id):
         dir_name = '/'.join([os.getcwd(), 'repository', dir_id])
@@ -37,6 +51,31 @@ class OSMAgent(implements(NFVOAgents)):
         tar.close()
 
         return nsd_yaml
+
+    def _get_vim_id(self):
+        try:
+            vim = self.client.vim.get(self.vim_name)
+        except NotFound as e:
+            msg = "VIM '%s' not found in '%s platform!" % (self.vim_name, self.nfvo_name)
+            logger.critical(msg)
+            exit(1)
+        else:
+            return vim['_id']
+
+    def get_vim_agent_instance(self):
+        vim = self.client.vim.get(self.vim_name)
+
+        if vim['vim_type'] != 'openstack':
+            msg = "VIM type %s not supported." % vim['vim_type']
+            logger.error(msg)
+            raise NFVOAgentsException(ERROR, msg)
+
+        vim_agent = OpenStackAgent(vim['vim_url'],
+                                   vim['vim_user'],
+                                   vim['vim_password'],
+                                   vim['vim_tenant_name']
+                                   )
+        return vim_agent
 
     def list_vnfs(self):
         """Retrieves a list of VNFs"""
@@ -59,8 +98,19 @@ class OSMAgent(implements(NFVOAgents)):
             vnfd_id = vnf.get('vnfd-id')
             vnf_status = vdu0.get('status')
 
-            vnfs.append({'vnf_id': vnf_id, 'vnf_name': vnf_name, 'instance_name': instance_name,
-                         'mgmt_url': mgmt_url, 'vnfd_id': vnfd_id, 'vnf_status': vnf_status, 'platform': OSM_NFVO})
+            if vnf['vim-account-id'] == self.vim_id:
+                vnfs.append({
+                    'vnf_id': vnf_id,
+                    'vnf_name': vnf_name,
+                    'instance_name': instance_name,
+                    'mgmt_url': mgmt_url,
+                    'vnfd_id': vnfd_id,
+                    'vnf_status': vnf_status,
+                    'platform': OSM_NFVO,
+                    'domain_name': self.domain_name,
+                    'nfvo_name': self.nfvo_name,
+                    'vim_name': self.vim_name
+                })
 
         return vnfs
 
@@ -91,7 +141,7 @@ class OSMAgent(implements(NFVOAgents)):
             try:
                 ns_status = ns['admin']['deployed']['RO']['nsr_status']
             except KeyError:
-                if ns['operational-status'] == 'failed':
+                if ns['operational-status'] == FAILED:
                     raise NFVOAgentsException(ERROR, ns['detailed-status'])
                 ns_status = 'KEY_ERROR'
 
@@ -136,9 +186,13 @@ class OSMAgent(implements(NFVOAgents)):
             nsd_id = self.client.nsd.create(nsd_path)
 
             logger.info("NSD created with id %s", nsd_id)
+        except ClientException as e:
+            logger.error(str(e))
+            self.client.vnfd.delete(vnfd_id)
+            raise NFVOAgentsException(ERROR, str(e))
 
-            # TODO Change static argument VIM1
-            ns_id = self.client.ns.create(nsd_id, vnf_name, 'VIM1', description=' ')
+        try:
+            ns_id = self.client.ns.create(nsd_id, vnf_name, self.vim_name, description=' ')
             logger.info("NS created with id %s", ns_id)
 
             ns = self.ns_polling(ns_id)
@@ -146,7 +200,14 @@ class OSMAgent(implements(NFVOAgents)):
             vnf_id = ns['constituent-vnfr-ref'][0]
             vnf = self.client.vnf.get(vnf_id)
 
-        except ClientException as e:
+        except (ClientException, NFVOAgentsException) as e:
+            logger.error(str(e))
+            logger.info("Rollback VNF creation actions are being done")
+            self.client.ns.delete(vnf_name)
+            self.client.nsd.delete(nsd_id)
+            self.client.vnfd.delete(vnfd_id)
+            logger.info("Rollback Done!")
+
             raise NFVOAgentsException(ERROR, str(e))
 
         vnf_ip = vnf['ip-address']
@@ -194,6 +255,24 @@ class OSMAgent(implements(NFVOAgents)):
         except ClientException as e:
             raise NFVOAgentsException(ERROR, str(e))
 
+    def show_vnf(self, vnf_id):
+        vnf = {}
+        try:
+            response = self.client.vnf.get(vnf_id)
+
+            vnf['id'] = response['id']
+            vnf['name'] = response['id']  # OSM does not have VNF name, used id for compatibility
+            vnf['status'] = response['vdur'][0]['status']
+            vnf['error_reason'] = ''
+            vnf['vnfd_id'] = response['vnfd-id']
+            vnf['mgmt_address'] = response['ip-address']
+            vnf['vm_name'] = response['vdur'][0]['name']
+
+        except NotFound:
+            pass
+
+        return vnf
+
     def list_sfcs(self):
         """Retrieves a list of NS"""
         try:
@@ -213,14 +292,15 @@ class OSMAgent(implements(NFVOAgents)):
 
             # desc = ns['instantiate_params']['nsDescription']
             sfp = ns['constituent-vnfr-ref']
+
             # removing the first VNF ​​because it generates the SFC's incoming traffic in OSM
-            sfp.pop(0)
+            # sfp.pop(0)
 
             # If the instantiated NS is just a VNF (not SFC), then constituent-vnfr-ref had just one element
             # Realize that an SFC NS has in OSM at least two VNFs in constituent-vnfr-ref
             # So, by removing the first VNF we can conclude that if sfp is empty, then this NS
             # is just a VNF, not an SFC.
-            if sfp:
+            if len(sfp) > 1:
                 policy = ns['nsd']['vnffgd'][0]['classifier'][0]['match-attributes'][0]
                 policy.pop('id')
 
@@ -355,6 +435,40 @@ class OSMAgent(implements(NFVOAgents)):
         template = yaml.safe_load(template)
         return template
 
+    def get_configured_policies(self, sfc_descriptor):
+        """Retrieves configured policies in the sfc descriptor
+
+        :return: a list containing key:value elements
+        """
+
+        criteria = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['classifier'][0]['match-attributes'][0]
+
+        items = []
+        for item in criteria:
+            items.append({item: criteria[item]})
+
+        return items
+
+    def get_sfc_input_security_policy_data(self, sfc_descriptor):
+        """Retrieves security policy data required to configure security policies
+
+        :param sfc_descriptor:
+        :return: IP protocol number, port_range_min, port_range_max
+        """
+        criteria = self.get_configured_policies(sfc_descriptor)
+        proto = None
+        min_port = None
+        max_port = None
+
+        for item in criteria:
+            if 'ip-proto' in item:
+                proto = item['ip-proto']
+            elif 'destination-port' in item:
+                min_port = item['destination-port']
+                max_port = item['destination-port']
+
+        return proto, min_port, max_port
+
     def add_constituent_vnf_and_virtual_link(self, sfc_descriptor, vnfd_name, vnf_nsd, input_vnf=False):
         """Adds VNF and its VL to the NSD
 
@@ -385,7 +499,11 @@ class OSMAgent(implements(NFVOAgents)):
         # the first member must be reserved for the VNF which generates the input SFC traffic
         vnf_id_ref = vnf_nsd['constituent-vnfd'][0]['vnfd-id-ref']
         if not input_vnf:
-            member_vnf_index = len(constituent_vnfd) + 2
+            if len(constituent_vnfd) == 0:
+                member_vnf_index = 2
+            else:
+                member_vnf_index = constituent_vnfd[-1]['member-vnf-index'] + 1
+
             constituent_vnfd.append({'member-vnf-index': member_vnf_index, 'vnfd-id-ref': vnf_id_ref})
         else:
             member_vnf_index = 1
@@ -475,8 +593,10 @@ class OSMAgent(implements(NFVOAgents)):
             sfc_sfp = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['rsp'][0]['vnfd-connection-point-ref']
 
         # Adding VNFs in RSP. Here the SFC composition happens auto-magically
+        mgmt_network = False
         for nsd_vl in vnf_nsd.get('vld'):
 
+            # Important: The management network of the VNF Package's NSD shall contain the 'mgmt-network'
             if not nsd_vl.get('mgmt-network'):
 
                 # NSD of a single VNF has just one CP in a VL
@@ -510,13 +630,47 @@ class OSMAgent(implements(NFVOAgents)):
                         vnffgd_cp_ref['order'] = previous_vnfd_cp.get('order') + 1
                         sfc_sfp.append(vnffgd_cp_ref)
 
+            else:
+                mgmt_network = True
+
+        if mgmt_network is False:
+            logger.warning("NS Descriptor '%s' does not have a management network (mgmt-network)", vnf_nsd['name'])
+
         # Checks whether the current VNF was added on the SFC composition
         if sfc_sfp[-1]['vnfd-id-ref'] != vnf_id_ref:
             raise NFVOAgentsException(ERROR, "There is no suitable CP for chaining with the previous VNF!")
 
-        # logger.info("\n%s", yaml.dump(sfc_descriptor))
-
         return sfc_descriptor
+
+    def get_sfc_traffic_origin(self, core):
+        # fields defines which information should be shown dynamically by client applications
+        fields = [
+            {'category': 'VNF Category'},
+            {'description': 'Description'},
+            {'platform': 'Platform'}
+            # {'id': 'ID'}
+        ]
+
+        vnfps = core.list_catalog()
+
+        src_vnfps = []
+        for vnfp in vnfps['vnfs']:
+
+            if vnfp['domain_id'] != ANY and vnfp['domain_id'] != self.domain_id \
+                    or vnfp['nfvo_id'] != ANY and vnfp['nfvo_id'] != self.nfvo_id:
+                continue
+
+            if vnfp['platform'] == OSM_NFVO:
+
+                src_vnfp = {
+                    'id': vnfp.get('_id'),
+                    'category': vnfp.get('category'),
+                    'description': vnfp.get('description'),
+                    'platform': OSM_NFVO
+                }
+                src_vnfps.append(src_vnfp)
+
+        return fields, src_vnfps
 
     def configure_traffic_src_policy(self, sfc_descriptor, origin, src_id, cp_out, database):
         """Includes ACL criteria according to INTERNAL or EXTERNAL traffic source
@@ -530,7 +684,7 @@ class OSMAgent(implements(NFVOAgents)):
         :param sfc_descriptor:
         :param origin: INTERNAL or EXTERNAL as in *utils module*
         :param src_id: the VNF Package ID of the VNF which generates de SFC incoming traffic
-        :param cp_out:
+        :param cp_out: not user by OSM Agent
         :param database:
         :return: the NSD being composed
 
@@ -598,7 +752,7 @@ class OSMAgent(implements(NFVOAgents)):
 
         criteria = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['classifier'][0]['match-attributes'][0]
 
-        # TODO Needs to implement a criteria parser and validator as in tacker_agent
+        # TODO Needs to implement a criteria parser and validator as implemented in tacker_agent
         criteria.update(acl)
 
         return sfc_descriptor
@@ -610,6 +764,7 @@ class OSMAgent(implements(NFVOAgents)):
         :param database:
         :param core:
         :param sfc_uuid:
+        :param sfc_name
         :return: a dict containing:
 
             - a list of *vnf_instances* of the created SFC
@@ -630,12 +785,14 @@ class OSMAgent(implements(NFVOAgents)):
 
         try:
             self.client.nsd.get(sfc_name)
+            logger.error("NSD name '%s' already exists on %s", sfc_name, self.nfvo_name)
             raise NFVOAgentsException(ERROR, "SFC name '%s' already exists" % sfc_name)
         except NotFound:
             pass
 
         try:
             self.client.ns.get(sfc_name)
+            logger.error("NS name '%s' already exists on %s", sfc_name, self.nfvo_name)
             raise NFVOAgentsException(ERROR, "SFC name '%s' already exists" % sfc_name)
         except NotFound:
             pass
@@ -680,7 +837,7 @@ class OSMAgent(implements(NFVOAgents)):
             nsd_id = self.client.nsd.create(nsd_file)
             logger.info("NSD created with id %s", nsd_id)
 
-            ns_id = self.client.ns.create(nsd['name'], sfc_name, 'VIM1', description=' ')
+            ns_id = self.client.ns.create(nsd['name'], sfc_name, self.vim_name, description=' ')
             logger.info("NS created with id %s", ns_id)
 
             ns = self.ns_polling(ns_id)
@@ -708,7 +865,7 @@ class OSMAgent(implements(NFVOAgents)):
         """ Destroys an NS and its related NSD and VNFDs
 
         :param sfc_id:
-        :param core: no used by this agent
+        :param core: not used by this agent
         """
 
         try:
@@ -735,3 +892,4 @@ class OSMAgent(implements(NFVOAgents)):
 
     def dump_sfc_descriptor(self, sfc_descriptor):
         return yaml.dump(sfc_descriptor)
+

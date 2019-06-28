@@ -2,16 +2,14 @@ nsd:nsd-catalog:
   nsd:
   - constituent-vnfd:
     - member-vnf-index: 1
-      vnfd-id-ref: cirros-client_vnfd
+      vnfd-id-ref: vxlan-server-public_vnfd
     - member-vnf-index: 2
-      vnfd-id-ref: cirros-forwarder1_vnfd
-    - member-vnf-index: 3
-      vnfd-id-ref: cirros-forwarder2_vnfd
+      vnfd-id-ref: ubuntu-forwarder1_vnfd
     description: Network Service Template
-    id: aec41598-6abd-43fd-a9b8-bd6df5aa235d
+    id: 6e49faf6-adeb-4674-9120-16ead9d3c7bd
     logo: osm_2x.png
-    name: osm-test
-    short-name: osm-test
+    name: tcp8080-seg2
+    short-name: tcp8080-seg2
     vendor: OSM
     version: '1.0'
     vld:
@@ -20,36 +18,37 @@ nsd:nsd-catalog:
       vnfd-connection-point-ref:
       - member-vnf-index-ref: 1
         vnfd-connection-point-ref: vnf-cp0
-        vnfd-id-ref: cirros-client_vnfd
+        vnfd-id-ref: vxlan-server-public_vnfd
       - member-vnf-index-ref: 2
-        vnfd-connection-point-ref: eth0
-        vnfd-id-ref: cirros-forwarder1_vnfd
-      - member-vnf-index-ref: 3
-        vnfd-connection-point-ref: eth0
-        vnfd-id-ref: cirros-forwarder2_vnfd
+        vnfd-connection-point-ref: vnf-cp0
+        vnfd-id-ref: ubuntu-forwarder1_vnfd
     - id: vld2
       vim-network-name: net1
       vnfd-connection-point-ref:
       - member-vnf-index-ref: 1
         vnfd-connection-point-ref: vnf-cp1
-        vnfd-id-ref: cirros-client_vnfd
+        vnfd-id-ref: vxlan-server-public_vnfd
       - member-vnf-index-ref: 2
-        vnfd-connection-point-ref: eth1
-        vnfd-id-ref: cirros-forwarder1_vnfd
-      - member-vnf-index-ref: 3
-        vnfd-connection-point-ref: eth1
-        vnfd-id-ref: cirros-forwarder2_vnfd
+        vnfd-connection-point-ref: vnf-cp1
+        vnfd-id-ref: ubuntu-forwarder1_vnfd
+    - id: vld3
+      vim-network-name: public
+      vnfd-connection-point-ref:
+      - member-vnf-index-ref: 1
+        vnfd-connection-point-ref: vnf-cp2
+        vnfd-id-ref: vxlan-server-public_vnfd
     vnffgd:
     - classifier:
       - id: class1
         match-attributes:
-        - id: match1
+        - destination-port: '8080'
+          id: match1
           ip-proto: '6'
         member-vnf-index-ref: 1
         name: class1-name
         rsp-id-ref: rsp1
         vnfd-connection-point-ref: vnf-cp1
-        vnfd-id-ref: cirros-client_vnfd
+        vnfd-id-ref: vxlan-server-public_vnfd
       description: VNFFG1 Template
       id: vnffg1
       name: vnffg1
@@ -59,12 +58,8 @@ nsd:nsd-catalog:
         vnfd-connection-point-ref:
         - member-vnf-index-ref: 2
           order: 0
-          vnfd-connection-point-ref: eth1
-          vnfd-id-ref: cirros-forwarder1_vnfd
-        - member-vnf-index-ref: 3
-          order: 1
-          vnfd-connection-point-ref: eth1
-          vnfd-id-ref: cirros-forwarder2_vnfd
+          vnfd-connection-point-ref: vnf-cp1
+          vnfd-id-ref: ubuntu-forwarder1_vnfd
       short-name: vnffg1-name
       vendor: ufpr
       version: '1.0'

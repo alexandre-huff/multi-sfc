@@ -2,5 +2,6 @@
     "category": "VXLAN Tunnel",
     "type": "general",
     "platform": "tacker",
-    "description": "Ubuntu VXLAN Public net1"
+    "description": "Ubuntu VXLAN Public net0",
+    "tunnel": "vxlan"
 }

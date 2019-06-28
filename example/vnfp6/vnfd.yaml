@@ -39,6 +39,7 @@ topology_template:
           iface ens4 inet dhcp
           EOF
           systemctl restart networking.service
+          apt-get install iperf3 -y
 
     CP61:
       type: tosca.nodes.nfv.CP.Tacker
@@ -75,10 +76,10 @@ topology_template:
         network_name: net0
         vendor: Tacker
 
-    FIP62:
-      type: tosca.nodes.network.FloatingIP
-      properties:
-        floating_network: public
-      requirements:
-        - link:
-          node: CP62
+#    FIP62:
+#      type: tosca.nodes.network.FloatingIP
+#      properties:
+#        floating_network: public
+#      requirements:
+#        - link:
+#          node: CP62

@@ -1,9 +1,12 @@
-''#!/usr/bin/env python
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
 import uuid
+import time
+import socket
+from contextlib import closing
 
-# Tacker REST API status codes
+# REST API status codes
 status = {
     200: 'OK.',
     201: 'Created.',
@@ -22,6 +25,9 @@ TIMEOUT = 'TIMEOUT'
 ACTIVE  = 'ACTIVE'
 OPTIONS = 'OPTIONS'
 
+# Generic execution domain/platform for VNFs
+ANY = 'ANY'
+
 # SFC network source traffic
 INTERNAL = '1'
 EXTERNAL = '2'
@@ -34,56 +40,58 @@ GENERAL_VNF = 'general'
 TACKER_NFVO = 'tacker'
 OSM_NFVO    = 'osm'
 
+IPSEC_PROTO = 17
+IPSEC_PORT = 500
+IPSEC_CHARON_PORT = 4500
+
+VXLAN_PROTO = 17
+VXLAN_PORT = 4789
+
+TUN_EM_PROTO = 6
+TUN_EM_PORT = 8000
+
+protocols = {
+    1: 'icmp',
+    6: 'tcp',
+    17: 'udp'
+}
+
 
 # Returns an unique ID
 def unique_id():
-    # return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(8))
     return str(uuid.uuid4())
 
 
-# used as a template to create a new VNFFG
-# vnffgd_template = {
-#     "vnffgd": {
-#         "name": "vnffgd1",
-#         "template": {
-#             "vnffgd": {
-#                 "tosca_definitions_version": "tosca_simple_profile_for_nfv_1_0_0",
-#                 "description": "Sample VNFFG template",
-#                 "topology_template": {
-#                     "node_templates": {
-#                         "Forwarding_path1": {
-#                             "type": "tosca.nodes.nfv.FP.Tacker",
-#                             "description": "creates path (CP12->CP22)",
-#                             "properties": {
-#                                 "policy": {
-#                                     "type": "ACL",
-#                                     "criteria": []
-#                                 },
-#                                 "path": [],
-#                                 "id": 0
-#                             }
-#                         }
-#                     },
-#                     "description": "Sample VNFFG template",
-#                     "groups": {
-#                         "VNFFG1": {
-#                             "type": "tosca.groups.nfv.VNFFG",
-#                             "description": "HTTP to Corporate Net",
-#                             "members": [
-#                                 "Forwarding_path1"
-#                             ],
-#                             "properties": {
-#                                 "vendor": "tacker",
-#                                 "connection_point": [],
-#                                 "version": 1.0,
-#                                 "constituent_vnfs": [],
-#                                 "number_of_endpoints": 0,
-#                                 "dependent_virtual_link": []
-#                             }
-#                         }
-#                     }
-#                 }
-#             }
-#         }
-#     }
-# }
+tunnel_config_scripts = {
+    'vxlan': 'em/vxlan.sh',
+    'ipsec': 'em/ipsec.sh'
+}
+
+
+def socket_polling(ip_address, port, sleep_time=15, wait_time=600):
+    """
+
+    :param ip_address:
+    :param port:
+    :param sleep_time:
+    :param wait_time:
+    :return:
+
+    Raises
+    ------
+        OSError, TimeoutError
+    """
+    timeout = time.time() + wait_time
+    # time.sleep(sleep_time)
+
+    while timeout > time.time():
+        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+            sock.settimeout(5)
+            try:
+                sock.connect((ip_address, port))
+                return
+            except ConnectionError:
+                time.sleep(sleep_time)
+                continue
+
+    raise TimeoutError("Timeout")

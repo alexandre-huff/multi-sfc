@@ -15,6 +15,9 @@ class NFVOAgents(Interface):
     def destroy_vnf(self, vnf_id):
         pass
 
+    def show_vnf(self, vnf_id):
+        pass
+
     def list_sfcs(self):
         pass
 
@@ -24,7 +27,16 @@ class NFVOAgents(Interface):
     def get_sfc_template(self):
         pass
 
+    def get_configured_policies(self, sfc_descriptor):
+        pass
+
+    def get_sfc_input_security_policy_data(self, sfc_descriptor):
+        pass
+
     def compose_sfp(self, sfc_descriptor, vnfd_name, vnfp_dir, database, options_cp_out):
+        pass
+
+    def get_sfc_traffic_origin(self, core):
         pass
 
     def configure_traffic_src_policy(self, sfc_descriptor, origin, src_id, cp_out, database):
@@ -40,4 +52,7 @@ class NFVOAgents(Interface):
         pass
 
     def dump_sfc_descriptor(self, sfc_descriptor):
+        pass
+
+    def get_vim_agent_instance(self):
         pass

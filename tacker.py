@@ -1,7 +1,5 @@
 #!/usr/bin/env python
 
-import configparser
-import os
 import requests
 import logging
 
@@ -18,39 +16,20 @@ class IdentityManager:
     Class responsible for identification and authentication of REST requests.
     """
 
-    def __init__(self):
-        CONFIG_FILE = 'tacker.conf'
-        if not os.path.isfile(CONFIG_FILE):
-            logger.critical("Missing tacker.conf file!")
-            exit(1)
-
-        config = configparser.ConfigParser()
-        config.read(CONFIG_FILE)
-
-        self.OPENSTACK_URL = config.get('tacker', 'url')
-        self.USERNAME      = config.get('auth', 'username')
-        self.TENANT_NAME   = config.get('auth', 'tenant_name')
-        self.PASSWORD      = config.get('auth', 'password')
-        self.FIP_INTERFACES = config['sfc_fip_router_interface']
+    def __init__(self, host, username, password, tenant_name):
+        self.tacker_url = "http://%s/" % host
+        self.username = username
+        self.password = password
+        self.tenant_name = tenant_name
 
         self.header = {
-            'Content-type' : 'application/json',
-            'Accept'       : 'application/json'
+            'Content-type': 'application/json',
+            'Accept': 'application/json'
         }
 
         resp = self.get_identity_info()
         self.token = resp.headers.get('X-Subject-Token')
         self.identity_info = resp.json()
-
-        # self.identity_info = self.get_identity_info_keystone()
-
-    def get_fip_router_interfaces(self):
-        """Return all FIP network configured interfaces in tacker.conf file
-
-        :return: a dictionary containing all FIP network configured interfaces in tacker.conf file
-        """
-
-        return self.FIP_INTERFACES
 
     def get_identity_info(self):
         """
@@ -82,9 +61,9 @@ class IdentityManager:
                     }
                 }
             }
-        }""" % (self.USERNAME, self.PASSWORD, self.TENANT_NAME)
+        }""" % (self.username, self.password, self.tenant_name)
 
-        url = self.OPENSTACK_URL + 'identity/v3/auth/tokens'
+        url = self.tacker_url + 'identity/v3/auth/tokens'
         return requests.post(url, data=data, headers=self.header)
 
     def get_identity_info_keystone(self):
@@ -179,21 +158,21 @@ class Tacker:
         url = self.tacker_endpoint + '/vnfds'
         return requests.get(url, headers=self.header)
 
-    def vnf_create(self, vnfd_id, vnf_name):
+    def vnf_create(self, vnfd_id, vnf_name, vim_id):
         """
-        Create a instance of a VNF.
+        Create an instance of a VNF.
         """
 
         url = self.tacker_endpoint + '/vnfs'
         data = """{
             "vnf": {
                 "attributes": {},
-                "vim_id": "",
+                "vim_id": "%s",
                 "description": "",
                 "vnfd_id": "%s",
                 "name": "%s"
             }
-        }""" % (vnfd_id, vnf_name)
+        }""" % (vim_id, vnfd_id, vnf_name)
 
         return requests.post(url, headers=self.header, data=data)
 
@@ -295,3 +274,16 @@ class Tacker:
 
         url = self.tacker_endpoint + '/sfcs'
         return requests.get(url, headers=self.header)
+
+    def vim_list(self):
+        """List all VIMs"""
+
+        url = self.tacker_endpoint + '/vims'
+        return requests.get(url, headers=self.header)
+
+    def vim_show(self, vim_id):
+        """Show a VIM by its id"""
+
+        url = self.tacker_endpoint + '/vims/%s' % vim_id
+        return requests.get(url, headers=self.header)
+
