@@ -15,7 +15,7 @@ from novaclient import client as nova_client
 from neutronclient.v2_0 import client as neutron_client
 from keystoneclient.v3 import client as keystone_client
 
-from urllib3.util import parse_url
+# from urllib3.util import parse_url
 
 logger = logging.getLogger('openstack_agent')
 
@@ -23,9 +23,8 @@ logger = logging.getLogger('openstack_agent')
 class OpenStackAgent(implements(VIMAgents)):
     """Implementation of the OpenStack Agent"""
 
-    def __init__(self, auth_url, username, password, vim_project_name):
+    def __init__(self, auth_url, username, password, vim_project_name, vim_name):
 
-        # auth_url = 'http://osm-vim.local/identity/v3'
         auth = v3.Password(auth_url=auth_url,
                            username=username,
                            password=password,
@@ -38,8 +37,9 @@ class OpenStackAgent(implements(VIMAgents)):
         self.neutron = neutron_client.Client(session=self.session)
         self.keystone = keystone_client.Client(session=self.session)
 
-        self.ip_address = parse_url(auth_url).host
+        # self.ip_address = parse_url(auth_url).host
         self.project_id = self._get_project_id(vim_project_name)
+        self.vim_name = vim_name
 
     def _get_project_id(self, project_name):
         projects = self.keystone.projects.list()
@@ -85,7 +85,7 @@ class OpenStackAgent(implements(VIMAgents)):
 
         return router['router']
 
-    def get_fip_router_interfaces(self, net_name):
+    def get_fip_router_interface(self, net_name):
         """Retrieves Floating IP router network port ID
 
         :param net_name:
@@ -135,7 +135,7 @@ class OpenStackAgent(implements(VIMAgents)):
         router = self._get_router_by_ip_address(router_subnet_cidr)
 
         logger.info("Adding static route on VIM %s router=%s destination=%s, nexthop=%s",
-                    self.ip_address, router['id'], destination, next_hop)
+                    self.vim_name, router['id'], destination, next_hop)
 
         routes = router['routes']
         static_route = {
@@ -176,8 +176,8 @@ class OpenStackAgent(implements(VIMAgents)):
 
         router = self._get_router_by_ip_address(router_subnet_cidr)
 
-        logger.info("Removing static route on VIM %s router=%s destination=%s, nexthop=%s",
-                    self.ip_address, router['id'], destination, next_hop)
+        logger.info("Removing static route from VIM %s router=%s destination=%s, nexthop=%s",
+                    self.vim_name, router['id'], destination, next_hop)
 
         routes = router['routes']
         static_route = {
@@ -227,18 +227,18 @@ class OpenStackAgent(implements(VIMAgents)):
         ip_proto = int(ip_proto)
 
         logger.info("Configuring security policy rule on VIM %s protocol=%s, port_range_min=%s, port_range_max=%s",
-                    self.ip_address, protocols[ip_proto], port_range_min, port_range_max)
+                    self.vim_name, protocols[ip_proto], port_range_min, port_range_max)
 
         if ip_proto not in protocols:
             msg = "Protocol number %s not supported to configure traffic policies on VIM %s" \
-                  % (ip_proto, self.ip_address)
+                  % (ip_proto, self.vim_name)
             logger.error(msg)
             raise VIMAgentsException(ERROR, msg)
 
         groups = self.neutron.list_security_groups(project_id=self.project_id, name='default')['security_groups']
 
         if not groups:
-            msg = "Default security group not found for tenant '%s' on VIM '%s'" % (self.project_id, self.ip_address)
+            msg = "Default security group not found for tenant '%s' on VIM '%s'" % (self.project_id, self.vim_name)
             logger.error(msg)
             raise VIMAgentsException(ERROR, msg)
 
@@ -280,11 +280,11 @@ class OpenStackAgent(implements(VIMAgents)):
                 result = self.neutron.create_security_group_rule(body=policy)
 
                 logger.info("Port opened! VIM=%s, rule_id=%s protocol=%s, port_range_min=%s, port_range_max=%s",
-                            self.ip_address, result['security_group_rule']['id'], protocols[ip_proto],
+                            self.vim_name, result['security_group_rule']['id'], protocols[ip_proto],
                             port_range_min, port_range_max)
 
             except NeutronClientException as e:
-                logger.error("VIM %s: %s", self.ip_address, e.message)
+                logger.error("VIM %s: %s", self.vim_name, e.message)
                 raise VIMAgentsException(ERROR, e.message)
 
         else:
@@ -325,7 +325,11 @@ class OpenStackAgent(implements(VIMAgents)):
 
 
 if __name__ == "__main__":
-    openstack = OpenStackAgent('http://osm-vim.local/identity/v3', 'admin', 'devstack', 'admin')
+    openstack = OpenStackAgent('http://tacker-nfvo.local:35357/v3',
+                               'admin',
+                               'AIbxwOQKLyNhBBfJeqE9mSIE63PLrVgjJjbU3y35',
+                               'admin'
+                               'test')
     # vms = openstack.list_vms()
     # print(vms)
     # openstack.configure_networks()

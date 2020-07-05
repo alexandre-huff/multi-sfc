@@ -1,0 +1,7 @@
+{
+    "category": "GRE Tunnel",
+    "type": "general",
+    "platform": "tacker",
+    "description": "Alpine GRE Public net0",
+    "tunnel": "gre"
+}

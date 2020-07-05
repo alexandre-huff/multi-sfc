@@ -16,11 +16,11 @@ topology_template:
             mem_size: 256 MB
             disk_size: 1 GB
       properties:
-        image: cirros-0.3.5-x86_64-disk
+        image: cirros
         availability_zone: nova
         mgmt_driver: noop
         name: cirros-client
-        key_name: huff_key
+        key_name: mykey
         user_data_format: RAW
         user_data: |
           #!/bin/sh

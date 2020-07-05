@@ -45,10 +45,10 @@ class NFVOAgents(Interface):
     def configure_policies(self, sfc_descriptor, acl):
         pass
 
-    def create_sfc(self, sfc_descriptor, database, core, sfc_uuid, sfc_name):
+    def create_sfc(self, sfc_descriptor, database, sfc_uuid, sfc_name, create_vnf_fn, destroy_vnf_fn):
         pass
 
-    def destroy_sfc(self, sfc_id, core):
+    def destroy_sfc(self, sfc_id, destroy_vnf_fn):
         pass
 
     def dump_sfc_descriptor(self, sfc_descriptor):

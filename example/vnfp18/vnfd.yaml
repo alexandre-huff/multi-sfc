@@ -1,9 +1,9 @@
 tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
 
-description: Cirros Forwarder Template
+description: Alpine Forwarder Template
 
 metadata:
-  template_name: cirros-forwarder1-vnfd
+  template_name: alpine-forwarder1-vnfd
 
 topology_template:
   node_templates:
@@ -13,29 +13,20 @@ topology_template:
         nfv_compute:
           properties:
             num_cpus: 1
-            mem_size: 128 MB
+            mem_size: 256 MB
             disk_size: 1 GB
       properties:
-        image: cirros
+        image: alpine-forwarder
         availability_zone: nova
         mgmt_driver: noop
-        name: cirros-forwarder-1
+        name: alpine-forwarder1
         key_name: mykey
         user_data_format: RAW
         user_data: |
           #!/bin/sh
-          sed -i -e 's/\localhost/\localhost\ cirros-forwarder-1/' /etc/hosts
-          cat <<EOF >> /etc/network/interfaces
-          	#post-up route del default dev \$IFACE
+          date
 
-          auto eth1
-          iface eth1 inet dhcp
-          	post-up route del default dev \$IFACE
-          	post-up echo 1 > /proc/sys/net/ipv4/ip_forward
-          EOF
-          ifup eth1
-
-    CP211:
+    CP181:
       type: tosca.nodes.nfv.CP.Tacker
       properties:
         management: true
@@ -43,37 +34,37 @@ topology_template:
         anti_spoofing_protection: false
       requirements:
         - virtualLink:
-            node: VL211
+            node: VL181
         - virtualBinding:
             node: VDU1
 
-    CP212:
+    CP182:
       type: tosca.nodes.nfv.CP.Tacker
       properties:
         order: 1
         anti_spoofing_protection: false
       requirements:
         - virtualLink:
-            node: VL212
+            node: VL182
         - virtualBinding:
             node: VDU1
 
-    VL211:
+    VL181:
       type: tosca.nodes.nfv.VL
       properties:
         network_name: net_mgmt
         vendor: Tacker
 
-    VL212:
+    VL182:
       type: tosca.nodes.nfv.VL
       properties:
         network_name: net0
         vendor: Tacker
 
-#    FIP212:
+#    FIP182:
 #      type: tosca.nodes.network.FloatingIP
 #      properties:
 #        floating_network: public
 #      requirements:
 #        - link:
-#          node: CP212
+#          node: CP182

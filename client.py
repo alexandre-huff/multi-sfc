@@ -434,13 +434,13 @@ def list_vnfs():
     vnfs = response['vnfs']
 
     if vnfs:
-        table = PrettyTable(["SEQ", "VNF ID", "Instance Name", "Mgmt Address", "Status", "Platform",
+        table = PrettyTable(["SEQ", "VNF ID", "VNF Name", "Mgmt Address", "Status", "Platform",
                              "Domain", "Platform Instance", "Platform VIM"])
 
         index = 0
         for vnf in vnfs:
             index += 1
-            row = [index, vnf['vnf_id'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform'],
+            row = [index, vnf['vnf_id'], vnf['vnf_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform'],
                    vnf['domain_name'], vnf['nfvo_name'], vnf['vim_name']]
             table.add_row(row)
 
@@ -465,7 +465,7 @@ def create_sfc():
     domain_catalog = requests.get(domain_url, headers=headers).json()
 
     while True:
-        header = ["Domain", "Platform Instance", "Tenant", "VIM Name", "Tunnel"]
+        header = ["Domain", "Platform Instance", "Project", "VIM Name", "Tunnel"]
         rows = []
         for item in domain_catalog:
             row = [item['domain_name'], item['nfvo_name'], item['tenant_name'], item['vim_name'], item['tunnel']]

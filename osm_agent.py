@@ -73,7 +73,8 @@ class OSMAgent(implements(NFVOAgents)):
         vim_agent = OpenStackAgent(vim['vim_url'],
                                    vim['vim_user'],
                                    vim['vim_password'],
-                                   vim['vim_tenant_name']
+                                   vim['vim_tenant_name'],
+                                   self.vim_name
                                    )
         return vim_agent
 
@@ -91,7 +92,7 @@ class OSMAgent(implements(NFVOAgents)):
             vdu0 = vnf['vdur'][0]
 
             # OSM does not show a VNF name, just VDU names
-            vnf_name = vnf['id']
+            vnf_name = vdu0.get('name')
 
             mgmt_url = vnf.get('ip-address')
             instance_name = vdu0.get('name')
@@ -757,14 +758,15 @@ class OSMAgent(implements(NFVOAgents)):
 
         return sfc_descriptor
 
-    def create_sfc(self, sfc_descriptor, database, core, sfc_uuid, sfc_name):
+    def create_sfc(self, sfc_descriptor, database, sfc_uuid, sfc_name, create_vnf_fn, destroy_vnf_fn):
         """Sends all VNFDs and the NSD to the OSM NFVO and instantiates the NS
 
         :param sfc_descriptor:
         :param database:
-        :param core:
         :param sfc_uuid:
-        :param sfc_name
+        :param sfc_name:
+        :param create_vnf_fn: callback function from the core module
+        :param destroy_vnf_fn: callback function from the core module
         :return: a dict containing:
 
             - a list of *vnf_instances* of the created SFC
@@ -845,7 +847,7 @@ class OSMAgent(implements(NFVOAgents)):
         except NFVOAgentsException as e:
             logger.error("NS %s could not be created! %s", sfc_name, e.reason)
             logger.error("Running rollback actions...")
-            self.destroy_sfc(sfc_name, core)
+            self.destroy_sfc(sfc_name, destroy_vnf_fn)
             raise NFVOAgentsException(e.status, e.reason)
 
         except ClientException as e:
@@ -861,11 +863,11 @@ class OSMAgent(implements(NFVOAgents)):
             'ns_id': ns_id
         }
 
-    def destroy_sfc(self, sfc_id, core):
+    def destroy_sfc(self, sfc_id, destroy_vnf_fn):
         """ Destroys an NS and its related NSD and VNFDs
 
         :param sfc_id:
-        :param core: not used by this agent
+        :param destroy_vnf_fn: callback function from the core module
         """
 
         try:
