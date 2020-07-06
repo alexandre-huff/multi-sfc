@@ -2,13 +2,15 @@
 
 import logging
 import json
-from builtins import AttributeError
-
+import sys
 import yaml
 import os
 import base64
 import tarfile
 
+from builtins import AttributeError
+from queue import Queue
+from threading import Thread
 from click_manager import ElementManagement
 from em.tunnel_manager import VXLANTunnel, IPSecTunnel, GRETunnel
 from exceptions import NFVOAgentsException, NFVOAgentOptions, MultiSFCException, DatabaseException, \
@@ -487,12 +489,16 @@ class Core:
             return
         return response
 
-    def destroy_vnf(self, vnf_id):
+    def destroy_vnf(self, vnf_id, queue=None):
         """Destroys a given VNF in its NFVO
 
         :param vnf_id: the NFVO VNF's ID
+        :param queue: states that this function is running in a thread and should put the response in that queue
+                      instead of returning it using the regular "return" primitive
+
         :return: OK if success, or ERROR and its reason if not
         """
+        response = None
 
         try:
             vnf_instance = database.list_vnf_instances(vnf_id=vnf_id)
@@ -508,13 +514,21 @@ class Core:
             database.remove_vnf_instance(vnf_instance[0]['_id'])
 
         except IndexError:
-            return {'status': ERROR, 'reason': 'VNF not found in database!'}
+            response = {'status': ERROR, 'reason': 'VNF not found in database!'}
         except (DatabaseException, NFVOAgentsException) as e:
-            return {'status': e.status, 'reason': e.reason}
+            response = {'status': e.status, 'reason': e.reason}
         except MultiSFCException as e:
-            return {'status': ERROR, 'reason': str(e)}
+            response = {'status': ERROR, 'reason': str(e)}
 
-        return {'status': OK}
+        if response is None:
+            response = {'status': OK}
+        else:
+            logger.error('Unable to destroy VNF instance id %s, reason: %s', vnf_id, response['reason'])
+
+        if queue:
+            queue.put(response)
+            return
+        return response
 
     def init_click(self, vnf_id, vnf_ip, click_function):
         """Once Click VNF VM is running, initialize all tasks.
@@ -1080,6 +1094,56 @@ class Core:
 
         return sfc_segments
 
+    def _create_sfc_segment(self, segment, sfc_name, sfc_uuid, queue):
+        """Implements a thread which instantiates a given Multi-SFC segment
+
+        Note: All raised exceptions are put into the queue. The caller should read the queue
+              and deal with the exceptions
+
+        Raises
+        ------
+            MultiSFCException
+
+        ReRaises
+        ------
+             NFVOAgentsException, DatabaseException, VIMAgentsException
+        """
+        try:
+            domain_id = segment['domain_id']
+            nfvo_id = segment['nfvo_id']
+            segment_name = segment['segment_name']
+
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
+
+            sfc = nfvo_agent.create_sfc(segment['sfc_template'], database, sfc_uuid, segment_name,
+                                        self.create_vnf, self.destroy_vnf)
+
+            # in case of tacker platform, on destroying the SFC segment the tunnel VNF must also be destroyed
+            if 'incoming_vnf' in segment:
+                sfc['vnf_instances'].insert(0, segment['incoming_vnf'])
+
+            database.insert_sfc_instance(sfc_name, sfc_uuid, sfc['vnf_instances'], sfc['nsd_id'],
+                                         sfc['ns_id'], segment_name, domain_id, nfvo_id)
+
+            # Configuring traffic policy rules (firewall) for each SFC segment
+            proto, port_min, port_max = nfvo_agent.get_sfc_input_security_policy_data(segment['sfc_template'])
+            vim_agent = nfvo_agent.get_vim_agent_instance()
+            try:
+                vim_agent.configure_security_policies(proto, port_min, port_max)
+            except VIMAgentsException as e:
+                logger.error('Unable to configure security policies. Executing rollback actions...')
+                response = self.destroy_sfc(sfc_uuid)
+                if response['status'] != OK:
+                    msg = ''.join([e.reason, response['reason']])
+                    raise MultiSFCException(msg)
+
+        except Exception:  # catching all exceptions
+            # python does not propagate exceptions to the caller thread, so we need to put them into a queue
+            queue.put(sys.exc_info())  # all exceptions are meant to be dealt by the caller
+            return
+
+        logger.info("Segment %s instantiated successfully!", segment_name)
+
     def create_sfc(self, sfc_data):
         """Sends and instantiates all segments of a Multi-SFC
 
@@ -1110,41 +1174,25 @@ class Core:
             if len(sfc_segments) > 1:
                 sfc_segments = self.configure_multi_sfc_segments(sfc_segments)
 
-            # instantiating all segments
+            # instantiating all segments using threads, I/O bound, no GLI problem
+            workers = []
+            queue = Queue()  # queue to get return values from threads
             seg_num = 1
             for segment in sfc_segments:
-                domain_id = segment['domain_id']
-                nfvo_id = segment['nfvo_id']
-                segment_name = ''.join([sfc_name, '-seg', str(seg_num)])
+                segment['segment_name'] = ''.join([sfc_name, '-seg', str(seg_num)])
                 seg_num += 1
 
-                nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
+                t = Thread(target=self._create_sfc_segment, args=(segment, sfc_name, sfc_data['sfc_uuid'], queue))
+                t.start()
+                workers.append(t)
 
-                sfc = nfvo_agent.create_sfc(segment['sfc_template'], database, sfc_data['sfc_uuid'], segment_name,
-                                            self.create_vnf, self.destroy_vnf)
+            for w in workers:  # waiting all threads to finish
+                w.join()
 
-                sfc['segment_name'] = segment_name
-
-                # in case of tacker platform, on destroying the SFC segment the tunnel VNF must also be destroyed
-                if 'incoming_vnf' in segment:
-                    sfc['vnf_instances'].insert(0, segment['incoming_vnf'])
-
-                database.insert_sfc_instance(sfc_name, sfc_data['sfc_uuid'], sfc['vnf_instances'], sfc['nsd_id'],
-                                             sfc['ns_id'], segment_name, domain_id, nfvo_id)
-
-                # Configuring traffic policy rules (firewall) for each SFC segment
-                proto, port_min, port_max = nfvo_agent.get_sfc_input_security_policy_data(segment['sfc_template'])
-                vim_agent = nfvo_agent.get_vim_agent_instance()
-                try:
-                    vim_agent.configure_security_policies(proto, port_min, port_max)
-                except VIMAgentsException as e:
-                    logger.error('Unable to configure security policies. Executing rollback actions...')
-                    response = self.destroy_sfc(sfc_data['sfc_uuid'])
-                    if response['status'] != OK:
-                        msg = ''.join([e.reason, response['reason']])
-                        raise MultiSFCException(msg)
-
-                logger.info("Segment %s instantiated successfully!", segment_name)
+            if not queue.empty():  # if queue has items, then at least an exception has been thrown
+                logger.debug('Returned data from threads: %s', list(queue.queue))
+                exc_info = queue.get()
+                raise exc_info[1]  # the exception object is the second element of the tuple
 
             if len(sfc_segments) > 1:
                 self.configure_tunnels(sfc_data['sfc_uuid'], sfc_segments)
@@ -1160,6 +1208,58 @@ class Core:
 
         return {'status': OK}
 
+    def _destroy_sfc_segment(self, segment, num_segments, queue):
+        """Implements a thread which destroys a given Multi-SFC segment
+
+        Note: All raised exceptions are put into the queue. The caller should read the queue
+              and deal with the exceptions
+
+        Raises
+        ------
+            MultiSFCException
+
+        ReRaises
+        ------
+             NFVOAgentsException, DatabaseException
+        """
+        try:
+            domain_id = segment['domain_id']
+            nfvo_id = segment['nfvo_id']
+            ns_id = segment['ns_id']
+            routing = segment.get('routing')
+
+            nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
+
+            nfvo_agent.destroy_sfc(ns_id, self.destroy_vnf)
+
+            # in case tacker_agent, there is a need to remove the VNF of the multi-sfc tunnel
+            if isinstance(nfvo_agent, TackerAgent) and num_segments > 1:
+                vnf_id = segment['vnf_instances'][0]
+                if database.list_vnf_instances(vnf_id=vnf_id):
+                    response = self.destroy_vnf(vnf_id)
+                    if response['status'] != OK:
+                        msg = 'Unable to destroy VNF id %s: %s' % (vnf_id, response['reason'])
+                        logger.error(msg)
+                        raise NFVOAgentsException(ERROR, msg)
+
+            # remove the route of the segment's virtual router in case it was configured (nat=False)
+            if routing is not None:
+                vim_agent = nfvo_agent.get_vim_agent_instance()
+                try:
+                    vim_agent.remove_route(routing['subnet_cidr'],
+                                           routing['destination'],
+                                           routing['next_hop'])
+                except VIMAgentsException:
+                    pass  # no action is needed, it is just logged on the server
+
+            # remove SFC_Instance from database
+            _id = segment['_id']
+            database.remove_sfc_instance(_id)
+
+        except Exception:  # catching all exceptions
+            # python does not propagate exceptions to the caller thread, so we need to put them into a queue
+            queue.put(sys.exc_info())  # all exceptions are meant to be dealt by the caller
+
     def destroy_sfc(self, multi_sfc_id):
         """Destroy all segments of a Multi-SFC
     
@@ -1171,39 +1271,21 @@ class Core:
             if not sfcs:
                 raise MultiSFCException("Multi-SFC id '%s' cannot be destroyed. Not found in database." % multi_sfc_id)
 
+            # destroying all segments using threads, I/O bound, no GLI problem
+            workers = []
+            queue = Queue()  # queue to get return values from threads
             for sfc in sfcs:
-                domain_id = sfc['domain_id']
-                nfvo_id = sfc['nfvo_id']
-                ns_id = sfc['ns_id']
-                routing = sfc.get('routing')
+                t = Thread(target=self._destroy_sfc_segment, args=(sfc, len(sfcs), queue))
+                t.start()
+                workers.append(t)
 
-                nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
+            for w in workers:  # waiting all threads to finish
+                w.join()
 
-                nfvo_agent.destroy_sfc(ns_id, self.destroy_vnf)
-
-                # in case tacker_agent, there is a need to remove the VNF of the multi-sfc tunnel
-                if isinstance(nfvo_agent, TackerAgent) and len(sfcs) > 1:
-                    vnf_id = sfc['vnf_instances'][0]
-                    if database.list_vnf_instances(vnf_id=vnf_id):
-                        response = self.destroy_vnf(vnf_id)
-                        if response['status'] != OK:
-                            msg = 'Unable to destroy VNF id %s: %s' % (vnf_id, response['reason'])
-                            logger.error(msg)
-                            raise NFVOAgentsException(ERROR, msg)
-
-                # remove the route of the segment's virtual router in case it was configured (nat=False)
-                if routing is not None:
-                    vim_agent = nfvo_agent.get_vim_agent_instance()
-                    try:
-                        vim_agent.remove_route(routing['subnet_cidr'],
-                                               routing['destination'],
-                                               routing['next_hop'])
-                    except VIMAgentsException:
-                        pass  # no action is needed, it is just logged on the server
-
-                # remove SFC_Instance from database
-                _id = sfc['_id']
-                database.remove_sfc_instance(_id)
+            if not queue.empty():  # if queue has items, then at least an exception has been thrown
+                logger.debug('Returned data from threads: %s', list(queue.queue))
+                exc_info = queue.get()
+                raise exc_info[1]  # the exception object is the second element of the tuple
 
         except (NFVOAgentsException, DatabaseException) as e:
             return {'status': e.status, 'reason': e.reason}

@@ -8,7 +8,7 @@ nsd:nsd-catalog:
     - member-vnf-index: 3
       vnfd-id-ref: alpine-forwarder2_vnfd
     description: Network Service Template
-    id: 378cd165-7762-450e-a072-910068741799
+    id: 4fab49d0-7f0f-4f77-9498-4498ecc865f5
     logo: osm_2x.png
     name: test-seg2
     short-name: test-seg2
@@ -52,7 +52,6 @@ nsd:nsd-catalog:
         - destination-port: '8080'
           id: match1
           ip-proto: '6'
-          source-ip-address: 10.10.0.35
         member-vnf-index-ref: 1
         name: class1-name
         rsp-id-ref: rsp1

@@ -639,7 +639,7 @@ class TackerAgent(implements(NFVOAgents)):
         vim_agent = self.get_vim_agent_instance()
 
         try:
-            src_port_id = vim_agent.get_fip_router_interfaces(net_name)
+            src_port_id = vim_agent.get_fip_router_interface(net_name)
         except VIMAgentsException as e:
             msg = "Router Floating IP interface not configured for network '%s'. %s" % (net_name, e.reason)
             logger.error(msg)
@@ -1188,37 +1188,74 @@ class TackerAgent(implements(NFVOAgents)):
 
         return vnffgd
 
-    def sfc_rollback_actions(self, vnf_instance_ids, destroy_vnf_fn, vnffgd_id=None):
-        """Executes the rollback actions whether an error occurs while instantiating a VNFFG
+    def destroy_sfc_actions(self, destroy_vnf_fn, vnf_instance_ids=None, vnffgd_id=None, vnffg_id=None):
+        """Executes the required actions do destroy an SFC
 
-        :param vnf_instance_ids:
+        This function can be employed on a regular workflow to destroy SFCs, and on rollback actions due to
+        errors while creating an SFC
+
         :param destroy_vnf_fn: callback function from the core module
-        :param vnffgd_id: the vnffg descriptor id to remove, if any
+        :param vnf_instance_ids: a list of vnf instance ids to destroy, only required if vnffg_id is None
+        :param vnffgd_id: the vnffg descriptor id to remove, only required if vnffg_id is None
+        :param vnffg_id: the vnffg id to remove, if any
 
-        :return: an error message
+        Raises
+        ------
+            NFVOAgentsException
 
         ReRaises
         ------
             NFVOAgentsException
         """
+        vnffg_vnfs = []  # list of vnf ids to destroy
 
-        logger.info("Executing rollback actions...")
-        error_message = ''
+        if vnffg_id:
+            data = self.show_vnffg(vnffg_id)
 
-        if vnffgd_id:
-            logger.info("Destroying VNFFGD %s", vnffgd_id)
+            vnffgd_id = data['vnffgd_id']
+            vnf_mapping = data['vnf_mapping']
+
+            for vnf_id in vnf_mapping.values():
+                vnffg_vnfs.append(vnf_id)
+
+            # destroying VNFFG
+            self.destroy_vnffg(vnffg_id)
+
+            # How many time should we wait before remove the VNFFGD?
+            time.sleep(2)
+
+        # destroying VNFFGD
+        if vnffgd_id:  # we need to check since rollback action might not have passed this argument
             self.delete_vnffgd(vnffgd_id)
 
-        for vnf_id in vnf_instance_ids:
-            rollback_data = destroy_vnf_fn(vnf_id)
-            if rollback_data['status'] != OK:
-                error_message = ' '.join([error_message, rollback_data['reason']])
-                logger.error(rollback_data['reason'])
+        if vnf_instance_ids and not vnffg_vnfs:  # we only use value of vnf_instance_ids on rollback actions
+            vnffg_vnfs = vnf_instance_ids
 
-        logger.info('Rollback done!')
+        # destroying all VNFs and VNFDs using threads, I/O bound, no GLI problem
+        workers = []
+        queue = Queue()  # queue to get return values from threads
+        for vnf_id in vnffg_vnfs:
+            t = Thread(target=destroy_vnf_fn, args=(vnf_id, queue))
+            t.start()
+            workers.append(t)
 
-        if error_message:
-            return error_message
+        for w in workers:  # waiting all threads to finish
+            w.join()
+
+        logger.debug('Returned data from threads: %s', list(queue.queue))
+
+        message = ''
+        while not queue.empty():
+            vnf_data = queue.get()
+
+            if vnf_data['status'] != OK:
+                message = ''.join([message, vnf_data['reason'], ' '])
+
+            queue.task_done()
+        # Threads to destroy VNFs up to here!!!
+
+        if message:
+            raise NFVOAgentsException(ERROR, message)
 
     def create_sfc(self, sfc_descriptor, database, sfc_uuid, sfc_name, create_vnf_fn, destroy_vnf_fn):
         """Sends and instantiates all VNFDs and VNFFGDs to the Tacker NFVO
@@ -1275,7 +1312,6 @@ class TackerAgent(implements(NFVOAgents)):
         for vnfd_name in constituent_vnfs:
             data = database.list_catalog(vnfd_name=vnfd_name)
 
-            # Second argument states that the called function is in a subprocess
             vnfp_data = {
                 'vnfp_id': data[0]['_id'],
                 'domain_id': self.domain_id,
@@ -1310,12 +1346,15 @@ class TackerAgent(implements(NFVOAgents)):
 
         # Rollback action if a given VNF fails on instantiating
         if error:
-            self.sfc_rollback_actions(vnf_instance_list, destroy_vnf_fn)
+            logger.info("Executing rollback actions...")
+            self.destroy_sfc_actions(destroy_vnf_fn, vnf_instance_list)
+            logger.info('Rollback done!')
             raise NFVOAgentsException(ERROR, 'Something went wrong on instantiating VNFs. See server logs.')
 
-        # incrementing SFP path_id number in VNFFGD
-        # Consider put the set_next_vnffgd_path_id() in a CRITICAL REGION to avoid condition racing
+        vnffgd_id = None
         try:
+            # incrementing SFP path_id number in VNFFGD
+            # Consider put the set_next_vnffgd_path_id() in a CRITICAL REGION to avoid condition racing
             sfc_descriptor = self.set_next_vnffgd_path_id(sfc_descriptor)
 
             # show the ultimate created VNFFGD
@@ -1326,27 +1365,25 @@ class TackerAgent(implements(NFVOAgents)):
             vnffgd_id = self.create_vnffgd(sfc_descriptor)
             # Critical Region up to here
 
-        # Rollback actions
-        except NFVOAgentsException as e:
-            message = self.sfc_rollback_actions(vnf_instance_list, destroy_vnf_fn)
-            logger.error(message)
-            raise NFVOAgentsException(e.status, message)
+            logger.info("SFC descriptor created with id %s", vnffgd_id)
 
-        logger.info("SFC descriptor created with id %s", vnffgd_id)
-
-        # instantiate VNFFG
-        try:
+            # instantiate VNFFG
             vnffg_id = self.create_vnffg(vnffgd_id, vnf_mapping, sfc_name)
 
         # Rollback actions
         except NFVOAgentsException as e:
-            message = self.sfc_rollback_actions(vnf_instance_list, destroy_vnf_fn, vnffgd_id)
-            if message:
-                logger.error(message)
-                message = ''.join([e.reason, 'Rollback: ', message])
-            else:
-                message = e.reason
-            raise NFVOAgentsException(e.status, message)
+            logger.error('Unable to instantiate SFC: %s', e.reason)
+            try:
+                logger.info("Executing rollback actions...")
+                self.destroy_sfc_actions(destroy_vnf_fn, vnf_instance_list, vnffgd_id)
+                logger.info('Rollback done!')
+
+            except NFVOAgentsException as ex:
+                logger.error('Unable to execute rollback actions: %s', ex.reason)
+                message = ' '.join([e.reason, 'Rollback:', ex.reason])
+                raise NFVOAgentsException(ERROR, message)
+
+            raise
 
         return {
             'vnf_instances': vnf_instance_list,
@@ -1362,6 +1399,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         :param sfc_id: the NFVO unique identifier of the VNFFG
         :param destroy_vnf_fn: callback function from the core module
+
         Raises
         ------
             NFVOAgentsException
@@ -1371,34 +1409,12 @@ class TackerAgent(implements(NFVOAgents)):
             NFVOAgentsException
         """
 
-        data = self.show_vnffg(sfc_id)
+        try:
+            self.destroy_sfc_actions(destroy_vnf_fn, vnffg_id=sfc_id)
 
-        vnffgd_id = data['vnffgd_id']
-        vnf_mapping = data['vnf_mapping']
-
-        vnffg_vnfs = []
-        for vnf_id in vnf_mapping.values():
-            vnffg_vnfs.append(vnf_id)
-
-        # destroying VNFFG
-        self.destroy_vnffg(sfc_id)
-
-        # How many time should we wait before remove the VNFFGD?
-        time.sleep(2)
-
-        # destroying VNFFGD
-        self.delete_vnffgd(vnffgd_id)
-
-        # destroying VNFs
-        message = ''
-        for vnf_id in vnffg_vnfs:
-            vnf_data = destroy_vnf_fn(vnf_id)
-
-            if vnf_data['status'] != OK:
-                message = ' '.join([message, '\nVNF id %s: ' % vnf_id, vnf_data['reason']])
-
-        if message:
-            raise NFVOAgentsException(ERROR, message)
+        except NFVOAgentsException as e:
+            logger.error('Unable to destroy SFC %s, reason: %s', sfc_id, e.reason)
+            raise
 
     def dump_sfc_descriptor(self, sfc_descriptor):
         return json.dumps(sfc_descriptor, indent=2, sort_keys=True)
