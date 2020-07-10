@@ -78,10 +78,10 @@ topology_template:
         network_name: net0
         vendor: Tacker
 
-    FIP72:
-      type: tosca.nodes.network.FloatingIP
-      properties:
-        floating_network: public
-      requirements:
-        - link:
-          node: CP72
+#    FIP72:
+#      type: tosca.nodes.network.FloatingIP
+#      properties:
+#        floating_network: public
+#      requirements:
+#        - link:
+#          node: CP72

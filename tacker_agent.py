@@ -611,9 +611,11 @@ class TackerAgent(implements(NFVOAgents)):
             # desc = vnffg['description']
             criteria = vnffg['attributes']['vnffgd']['topology_template']['node_templates']['Forwarding_path1'] \
                             ['properties']['policy']['criteria']
-            policies = criteria[0]['classifier']  # currently multi-sfc only supports one classifier, thus [0] is ok
-
-            policies.pop('network_src_port_id')
+            policies = []
+            for classifier in criteria:
+                data = classifier['classifier']
+                data.pop('network_src_port_id')
+                policies.append(data)
 
             vnffgs.append({
                 'id': vnffg_id,
@@ -697,7 +699,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         return cp_out
 
-    def get_policies(self):
+    def get_available_policies(self):
         """Returns the Tacker classifier ACL"""
 
         return {
@@ -784,7 +786,7 @@ class TackerAgent(implements(NFVOAgents)):
             }
         }
 
-    def get_configured_policies(self, sfc_descriptor):
+    def get_policies(self, sfc_descriptor):
         """Retrieves the configured policies in the sfc descriptor
 
         :return: a list containing key:value elements
@@ -792,7 +794,9 @@ class TackerAgent(implements(NFVOAgents)):
 
         topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
         criteria = topology_template['node_templates']['Forwarding_path1']['properties']['policy']['criteria']
-        policies = criteria[0]['classifier']  # currently multi-sfc only supports one classifier, thus [0] is ok
+        policies = []
+        for classifier in criteria:
+            policies.append(classifier['classifier'])
 
         return policies
 
@@ -800,23 +804,24 @@ class TackerAgent(implements(NFVOAgents)):
         """Retrieves security policy data required to configure security policies
 
         :param sfc_descriptor:
-        :return: IP protocol number, port_range_min, port_range_max
+        :return: a list of dicts containing the IP protocol number, port_range_min, port_range_max
+                [{proto: 6, min_port: 80 , max_port: 80}]
         """
-        criteria = self.get_configured_policies(sfc_descriptor)
-        proto = None
-        min_port = None
-        max_port = None
+        policies = self.get_policies(sfc_descriptor)
 
-        for key, value in criteria.items():
-            if 'ip_proto' in key:
-                proto = value
-            elif 'destination_port_range'in key:
-                dst_range = value
+        policy_data = []
+        for policy in policies:
+            data = {}
+            if 'ip_proto' in policy:
+                data['proto'] = policy['ip_proto']
+            if 'destination_port_range' in policy:
+                dst_range = policy['destination_port_range']
                 dst_range = dst_range.split(sep='-')
-                min_port = dst_range[0]
-                max_port = dst_range[1]
+                data['min_port'] = dst_range[0]
+                data['max_port'] = dst_range[1]
+            policy_data.append(data)
 
-        return proto, min_port, max_port
+        return policy_data
 
     def list_vnf_pkg_cps(self, vnfp_dir):
         """Retrieve all connection points of a VNF Package stored in repository
@@ -1042,15 +1047,14 @@ class TackerAgent(implements(NFVOAgents)):
         ------
             DatabaseException
         """
+        net_src_port_id = None
 
         topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
         # sfp = service function path
         sfp_cps = topology_template['groups']['VNFFG1']['properties']['connection_point']
         sfp_vnfs = topology_template['groups']['VNFFG1']['properties']['constituent_vnfs']
         # network_src_port_id is a requirement for Tacker NFVO
-        criteria = topology_template['node_templates']['Forwarding_path1'] \
-            ['properties']['policy']['criteria']
-        classifier = criteria[0]['classifier']  # currently multi-sfc only supports one classifier, thus [0] is ok
+        criteria = topology_template['node_templates']['Forwarding_path1']['properties']['policy']['criteria']
 
         catalog = database.list_catalog(vnfd_name=sfp_vnfs[0])
         sfp_first_pkg_dir_id = catalog[0]['dir_id']
@@ -1093,17 +1097,22 @@ class TackerAgent(implements(NFVOAgents)):
                 if cp_name not in vnf_pkg_cps:
                     raise NFVOAgentsException(ERROR, 'Invalid CP!')
 
-            resource_id = self.get_vnf_nfvo_resource_id(src_id, cp_name)
-
-            classifier['network_src_port_id'] = resource_id
+            net_src_port_id = self.get_vnf_nfvo_resource_id(src_id, cp_name)
 
         elif origin == EXTERNAL:
-            data = self.get_fip_router_interface_id(sfp_first_vnf_cps[sfp_cps[0]]['network_name'])
-
-            classifier['network_src_port_id'] = data
+            net_src_port_id = self.get_fip_router_interface_id(sfp_first_vnf_cps[sfp_cps[0]]['network_name'])
 
         else:
             raise NFVOAgentsException(ERROR, 'SFC network traffic should be INTERNAL or EXTERNAL.')
+
+        if not net_src_port_id:
+            logger.error('Unable to get a value for network_src_port_id')
+            raise NFVOAgentsException(ERROR, 'Unable to get the source port id to configure the SFC classifier')
+
+        # currently multi-sfc uses only one network_src_port_id for all classifiers (the same)
+        # the configure_policies gets this value and uses for all subsequent classifiers
+        for classifier in criteria:
+            classifier['classifier']['network_src_port_id'] = net_src_port_id
 
         return sfc_descriptor
 
@@ -1146,19 +1155,26 @@ class TackerAgent(implements(NFVOAgents)):
 
         return acl
 
-    def configure_policies(self, sfc_descriptor, acl):
-        """Configure ACL rules on the Tacker SFC classifier"""
+    def configure_policies(self, sfc_descriptor, policies):
+        """Configure ACL rules for all Tacker SFC classifiers"""
 
         topology_template = sfc_descriptor['vnffgd']['template']['vnffgd']['topology_template']
 
         criteria = topology_template['node_templates']['Forwarding_path1']['properties']['policy']['criteria']
 
-        acl = self.acl_criteria_parser(acl)
+        net_src_port_id = criteria[0]['classifier'].get('network_src_port_id')
 
-        classifier = criteria[0]['classifier']  # currently, multi-sfc only supports one classifier, thus [0] is ok
+        criteria.clear()  # remove the partial data of the first classifier to build all of them in one shot (simplify)
 
-        for k, v in acl.items():
-            classifier[k] = v
+        for acl in policies:  # acl is the content of a policy
+            acl = self.acl_criteria_parser(acl)
+            acl['network_src_port_id'] = net_src_port_id
+            classifier = {
+                "classifier": acl
+                # classifier unique name is configured in create_sfc function, since the SFC name is required
+                # "name": ""
+            }
+            criteria.append(classifier)
 
         return sfc_descriptor
 
@@ -1300,10 +1316,10 @@ class TackerAgent(implements(NFVOAgents)):
         # configuring VNFFGD unique name
         sfc_descriptor['vnffgd']['name'] = sfc_name
 
-        # configuring classifier unique name
+        # configuring classifiers human readable unique names
         criteria = topology_template['node_templates']['Forwarding_path1']['properties']['policy']['criteria']
-        classifier = criteria[0]
-        classifier['name'] = sfc_name + '-classifier'
+        for index, classifier in enumerate(criteria, start=1):
+            classifier['name'] = sfc_name + '-classifier{}'.format(index)
 
         # Instantiating all VNFDs in VNFFGD using threads, I/O bound, no GLI problem
         workers = []

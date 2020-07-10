@@ -627,7 +627,7 @@ class Core:
                 domain_data.append(data)
         return domain_data
 
-    def get_policies(self, sfc_uuid):
+    def list_available_acl(self, sfc_uuid):
         """Retrieves the NFVO classifier ACL of the first SFC segment"""
         sfc_segments = self.cache.get(sfc_uuid)
         if sfc_segments is None:
@@ -641,7 +641,7 @@ class Core:
         except MultiSFCException as e:
             return {'status': ERROR, 'reason': str(e)}
 
-        acl_criterias = nfvo_agent.get_policies()
+        acl_criterias = nfvo_agent.get_available_policies()
 
         return {'acl': acl_criterias}
 
@@ -941,7 +941,7 @@ class Core:
         except KeyError:
             return {'status': ERROR, 'reason': 'SFC UUID must be informed!'}
 
-        acl = policy_data['acl']
+        policies = policy_data['policies']
 
         # configuring policies of SFC incoming traffic
         domain_id = sfc_template[0]['domain_id']
@@ -950,7 +950,8 @@ class Core:
         try:
             nfvo_agent = self._get_nfvo_agent_instance(domain_id, nfvo_id)
 
-            sfc_template[0]['sfc_template'] = nfvo_agent.configure_policies(sfc_template[0]['sfc_template'], acl)
+            sfc_template[0]['sfc_template'] = nfvo_agent.configure_policies(sfc_template[0]['sfc_template'],
+                                                                            policies)
 
         except NFVOAgentsException as e:
             return {'status': e.status, 'reason': e.reason}
@@ -1030,7 +1031,7 @@ class Core:
         """
         tunnel = None
         input_platform = None
-        input_criteria = None
+        input_policies = None
 
         for segment in sfc_segments:
             domain_id = segment['domain_id']
@@ -1042,7 +1043,7 @@ class Core:
             if input_platform is None:  # it means that the segment is the first one
                 input_platform = platform
                 tunnel = self._domain_catalog[domain_id][nfvo_id]['tunnel']
-                input_criteria = nfvo_agent.get_configured_policies(segment['sfc_template'])
+                input_policies = nfvo_agent.get_policies(segment['sfc_template'])
 
             if self._domain_catalog[domain_id][nfvo_id]['tunnel'] != tunnel or tunnel is None:
                 raise MultiSFCException("Configuration of segment tunnels mismatch!")
@@ -1058,13 +1059,16 @@ class Core:
             # if it is not the first segment, then add the tunnel vnf at the beginning of the segment
             if sfc_segments.index(segment) > 0:
                 # Configuring acl policies based on the first segment classifier
-                segment_criteria = {}
-                for k, v in input_criteria.items():
-                    parsed_criteria = self.parse_segment_classifier_policy({k: v}, input_platform, platform)
-                    if parsed_criteria is not None:
-                        segment_criteria.update(parsed_criteria)
+                segment_policies = []
+                for policy in input_policies:
+                    policies = {}
+                    for k, v in policy.items():
+                        parsed_criteria = self.parse_segment_classifier_policy({k: v}, input_platform, platform)
+                        if parsed_criteria is not None:
+                            policies.update(parsed_criteria)
+                    segment_policies.append(policies)
 
-                segment['sfc_template'] = nfvo_agent.configure_policies(segment['sfc_template'], segment_criteria)
+                segment['sfc_template'] = nfvo_agent.configure_policies(segment['sfc_template'], segment_policies)
 
                 # Configuring the segment input VNF (tunnel)
                 if platform == TACKER_NFVO:
@@ -1126,16 +1130,17 @@ class Core:
                                          sfc['ns_id'], segment_name, domain_id, nfvo_id)
 
             # Configuring traffic policy rules (firewall) for each SFC segment
-            proto, port_min, port_max = nfvo_agent.get_sfc_input_security_policy_data(segment['sfc_template'])
             vim_agent = nfvo_agent.get_vim_agent_instance()
-            try:
-                vim_agent.configure_security_policies(proto, port_min, port_max)
-            except VIMAgentsException as e:
-                logger.error('Unable to configure security policies. Executing rollback actions...')
-                response = self.destroy_sfc(sfc_uuid)
-                if response['status'] != OK:
-                    msg = ''.join([e.reason, response['reason']])
-                    raise MultiSFCException(msg)
+            input_rules = nfvo_agent.get_sfc_input_security_policy_data(segment['sfc_template'])
+            for rule in input_rules:
+                try:
+                    vim_agent.configure_security_policies(rule.get('proto'), rule.get('min_port'), rule.get('max_port'))
+                except VIMAgentsException as e:
+                    logger.error('Unable to configure security policies. Executing rollback actions...')
+                    response = self.destroy_sfc(sfc_uuid)
+                    if response['status'] != OK:
+                        msg = ''.join([e.reason, response['reason']])
+                        raise MultiSFCException(msg)
 
         except Exception:  # catching all exceptions
             # python does not propagate exceptions to the caller thread, so we need to put them into a queue
@@ -1358,15 +1363,20 @@ class Core:
         # In case of using routing mode, a static route with the source ip must be configured on the
         # virtual router of the tunnel server side
         # Each pair of segments must have different subnet ranges to configure the IP Tunnel
-        nat = True
-        policies = nfvo_agent.get_configured_policies(sfc_segments[0]['sfc_template'])
+        policies = nfvo_agent.get_policies(sfc_segments[0]['sfc_template'])
         source_address = None
-        if 'ip_src_prefix' in policies:  # tacker
-            nat = False
-            source_address = policies['ip_src_prefix']
-        elif 'src-ip-address' in policies:  # osm
-            nat = False
-            source_address = policies['src-ip-address']
+        src_key = None
+        if isinstance(nfvo_agent, TackerAgent):
+            src_key = 'ip_src_prefix'
+        elif isinstance(nfvo_agent, OSMAgent):
+            src_key = 'src-ip-address'
+
+        nat = True
+        for policy in policies:
+            source_address = policy.get(src_key)
+            if source_address:
+                nat = False  # there is no need to configure NAT if source address has been informed
+                break
 
         # starts configuring from the second segment (first pair)
         for i in range(1, len(sfc_segments)):
