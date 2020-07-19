@@ -219,17 +219,19 @@ class OpenStackAgent(implements(VIMAgents)):
         ------
             VIMAgentsException
         """
-        if ip_proto is None:
-            msg = "IP Protocol must have a value!"
-            logger.error(msg)
-            raise VIMAgentsException(ERROR, msg)
-
-        ip_proto = int(ip_proto)
+        # if ip_proto is None:
+        #     ip_proto = 61  # any
+        #     msg = "IP Protocol must have a value!"
+        #     logger.error(msg)
+        #     raise VIMAgentsException(ERROR, msg)
+        #
+        if ip_proto is not None:
+            ip_proto = int(ip_proto)
 
         logger.info("Configuring security policy rule on VIM %s protocol=%s, port_range_min=%s, port_range_max=%s",
-                    self.vim_name, protocols[ip_proto], port_range_min, port_range_max)
+                    self.vim_name, protocols.get(ip_proto), port_range_min, port_range_max)
 
-        if ip_proto not in protocols:
+        if ip_proto is not None and ip_proto not in protocols:
             msg = "Protocol number %s not supported to configure traffic policies on VIM %s" \
                   % (ip_proto, self.vim_name)
             logger.error(msg)
@@ -251,7 +253,7 @@ class OpenStackAgent(implements(VIMAgents)):
                 "ethertype": "IPv4",
                 # "port_range_max": "80",
                 # "protocol": "tcp",
-                "protocol": protocols[ip_proto],
+                "protocol": protocols.get(ip_proto),
                 # "remote_ip_prefix": "0.0.0.0/0",
                 "security_group_id": group_id
             }
@@ -268,7 +270,7 @@ class OpenStackAgent(implements(VIMAgents)):
         for rule in groups[0]['security_group_rules']:
             if rule['direction'] == 'ingress' \
                     and rule['ethertype'] == 'IPv4' \
-                    and rule['protocol'] == protocols[ip_proto] \
+                    and rule['protocol'] == protocols.get(ip_proto) \
                     and rule['port_range_min'] == port_range_min \
                     and rule['port_range_max'] == port_range_max:
                 prev_rule = rule

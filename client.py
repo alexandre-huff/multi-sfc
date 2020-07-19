@@ -435,7 +435,7 @@ def list_vnfs():
 
     if vnfs:
         table = PrettyTable(["SEQ", "VNF ID", "VNF Name", "Mgmt Address", "Status", "Platform",
-                             "Domain", "Platform Instance", "Platform VIM"])
+                             "Domain", "Platform Instance", "VIM Platform"])
 
         index = 0
         for vnf in vnfs:
