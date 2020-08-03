@@ -2,5 +2,5 @@
     "category": "Forwarder",
     "type": "general",
     "platform": "tacker",
-    "description": "Ubuntu Forwarder 3 net1"
+    "description": "Ubuntu Forwarder 3 net0"
 }

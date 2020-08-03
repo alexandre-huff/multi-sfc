@@ -6,18 +6,19 @@ domains:
         name: Tacker at Domain 1
         # platform: tacker|osm
         platform: tacker
-        host: 200.17.212.238
-        username: admin
-        password: devstack
+        # tacker uses auth_url, osm uses host
+        auth_url: http://192.168.1.100:35357/v3
+        username: user
+        password: secret
         tenant-name: admin
         # a VIM name configured in this NFVO
-        vim-name: VIM0
-        vim-username: admin
-        vim-password: devstack
+        vim-name: VIM240
+        vim-username: user
+        vim-password: secret
         # currently only "openstack" is supported
         vim-type: openstack
-        # ipsec|vxlan|or it can be left with no value in case of not running a multi-sfc
-        tunnel: vxlan
+        # ipsec|vxlan|gre, or it can be left with no value in case of not running a multi-sfc
+        tunnel: gre
 
   # if you don't have other domain or nfvo, just comment it
   - id: domain2
@@ -26,12 +27,13 @@ domains:
       - id: osm-site1
         name: OSM at Domain 2
         platform: osm
-        host: 200.17.212.239
-        username: admin
-        password: admin
+        # osm uses host, tacker uses auth_url
+        host: 192.168.1.200
+        username: user
+        password: secret
         tenant-name: admin
-        vim-name: VIM0
-        vim-username: admin
-        vim-password: devstack
+        vim-name: VIM-USSURI
+        vim-username: user
+        vim-password: secret
         vim-type: openstack
-        tunnel: vxlan
+        tunnel: gre

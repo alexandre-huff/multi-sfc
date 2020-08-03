@@ -20,7 +20,7 @@ topology_template:
         availability_zone: nova
         mgmt_driver: noop
         name: http-server
-        key_name: huff_key
+        key_name: mykey
         user_data_format: RAW
         user_data: |
           #!/bin/sh
@@ -32,7 +32,10 @@ topology_template:
           iface ens4 inet dhcp
           EOF
           echo 'ubuntu:123456' | chpasswd
-          echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/lymHq+InhmVI48dNWEnJXyQeVnID4l5UhY0yKm7K/yuAjPE+XsYc0IyDaNcsQYgdixX8dCvTsXQAoTAV2VWtKNSgl+FUbg6fPjfTMfVkIAVTb2uTmwrM0XUm+DF3Rl3/3PTM2qUJzU71WfkEV4FtUYVifp4ID8DOKelqX3/TsK5HRuE1IdulLAt3p4wox7HwJm0NK4UbEn5xvXfXLCsj8Uv/cBdZ18bE9/XPl2CA1RztRVNcHt12sM034LdlG2FgK03BAPcFDKKw/nAac9MpKRo9ANfA/uxBUJJaLq40wOvCBYUvZStG34ErZnVmBnhsH57yd7HfYny2HSztTVwF alexandre@huff" >> /home/ubuntu/.ssh/authorized_keys
+          cat <<EOF >> /home/ubuntu/.ssh/authorized_keys
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/lymHq+InhmVI48dNWEnJXyQeVnID4l5UhY0yKm7K/yuAjPE+XsYc0IyDaNcsQYgdixX8dCvTsXQAoTAV2VWtKNSgl+FUbg6fPjfTMfVkIAVTb2uTmwrM0XUm+DF3Rl3/3PTM2qUJzU71WfkEV4FtUYVifp4ID8DOKelqX3/TsK5HRuE1IdulLAt3p4wox7HwJm0NK4UbEn5xvXfXLCsj8Uv/cBdZ18bE9/XPl2CA1RztRVNcHt12sM034LdlG2FgK03BAPcFDKKw/nAac9MpKRo9ANfA/uxBUJJaLq40wOvCBYUvZStG34ErZnVmBnhsH57yd7HfYny2HSztTVwF alexandre@huff
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC3lOPp2GaeDZSrSOkDMsE+sYaKfx+YHUKarMT+/CaxBEZQzP9Dg0COlL3TQ0f4j6FYmU6+Jq7qhnP966BrXoYFzx2S/P8UdWHspFKmW4opRJioS6l3KktHLatF7AE/K2n2sk22BbLNsq1CwUDyBnp+2iQxgD9FQph0iszkiY9lPIgcSNZu15sZ+C7kbQDoZ0DldjGezC8Swg3UefGLuPkVeA8wIZsV30fWwyJ8qjrT+vJ1vHm4pU00kigIUWE5dhnYHp1xufxL4lLLBwsfwJyXS2Uvs+by0oTQ+uEH8rjQKjfVKoxsNOjHPe+b6bd98q7S71dqGr+z0nbFvVwowmsp alexandre@huff18
+          EOF
           locale-gen pt_BR.UTF-8
           timedatectl set-timezone America/Sao_Paulo
           systemctl restart networking.service
@@ -48,7 +51,7 @@ topology_template:
       properties:
         management: true
         order: 0
-        anti_spoofing_protection: false
+#        anti_spoofing_protection: false
       requirements:
         - virtualLink:
             node: VL71
@@ -78,10 +81,10 @@ topology_template:
         network_name: net0
         vendor: Tacker
 
-    FIP72:
-      type: tosca.nodes.network.FloatingIP
-      properties:
-        floating_network: public
-      requirements:
-        - link:
-          node: CP72
+#    FIP72:
+#      type: tosca.nodes.network.FloatingIP
+#      properties:
+#        floating_network: public
+#      requirements:
+#        - link:
+#          node: CP72

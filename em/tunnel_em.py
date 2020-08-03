@@ -6,8 +6,8 @@ from flask import request, jsonify, Flask
 from subprocess import Popen, PIPE
 
 
-SCRIPT = './tunnel'
-SERVER = '192.168.1.1:5050'
+SCRIPT = '{}/tunnel'.format(os.getcwd())
+SERVER = '200.17.212.241:5050'
 
 app = Flask(__name__)
 
@@ -55,6 +55,17 @@ def install():
                 data['remote_ip'],
                 data['vxlan_local_ip'],
                 data['vxlan_remote_ip'],
+                data['route_net_host'],
+                data['nat']
+            ]
+        elif data['type'] == 'gre':
+            args = [
+                SCRIPT,
+                data['action'],
+                data['local_ip'],
+                data['remote_ip'],
+                data['gre_local_ip'],
+                data['gre_remote_ip'],
                 data['route_net_host'],
                 data['nat']
             ]

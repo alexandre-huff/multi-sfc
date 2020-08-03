@@ -20,7 +20,7 @@ topology_template:
         availability_zone: nova
         mgmt_driver: noop
         name: linux-forwarder3
-        key_name: huff_key
+        key_name: mykey
         user_data_format: RAW
         user_data: |
           #!/bin/sh
@@ -49,7 +49,7 @@ topology_template:
       properties:
         management: true
         order: 0
-        anti_spoofing_protection: false
+#        anti_spoofing_protection: false
       requirements:
         - virtualLink:
             node: VL151
@@ -76,7 +76,7 @@ topology_template:
     VL152:
       type: tosca.nodes.nfv.VL
       properties:
-        network_name: net1
+        network_name: net0
         vendor: Tacker
 
 #    FIP82:

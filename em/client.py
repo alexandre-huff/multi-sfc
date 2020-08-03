@@ -8,7 +8,7 @@ import sys
 VXLAN_PATH = 'em/vxlan.sh'
 IPSEC_PATH = 'em/ipsec.sh'
 
-url = 'http://172.24.241.15:8000/em/config'
+url = 'http://192.168.241.15:8000/em/config'
 
 if len(sys.argv) != 2:
     print("Usage: %s [vxlan|ipsec]" % sys.argv[0])
@@ -31,12 +31,12 @@ elif tunnel == 'vxlan':
     args = {
         'type': tunnel,
         'action': 'start',
-        'local_ip': '172.24.241.15',
-        'remote_ip': '172.24.240.12',
+        'local_ip': '172.24.241.24',
+        'remote_ip': '172.24.240.3',
         'vxlan_local_ip': '192.168.200.1/30',
         'vxlan_remote_ip': '192.168.200.2',
-        'route_net_host': '10.10.0.0/24',
-        'nat': 'True'
+        'route_net_host': '10.0.0.0/24',
+        'nat': 'False'
     }
 
 else:

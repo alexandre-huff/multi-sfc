@@ -21,13 +21,13 @@ class NFVOAgents(Interface):
     def list_sfcs(self):
         pass
 
-    def get_policies(self):
+    def get_available_policies(self):
         pass
 
     def get_sfc_template(self):
         pass
 
-    def get_configured_policies(self, sfc_descriptor):
+    def get_policies(self, sfc_descriptor):
         pass
 
     def get_sfc_input_security_policy_data(self, sfc_descriptor):
@@ -42,13 +42,13 @@ class NFVOAgents(Interface):
     def configure_traffic_src_policy(self, sfc_descriptor, origin, src_id, cp_out, database):
         pass
 
-    def configure_policies(self, sfc_descriptor, acl):
+    def configure_policies(self, sfc_descriptor, policies):
         pass
 
-    def create_sfc(self, sfc_descriptor, database, core, sfc_uuid, sfc_name):
+    def create_sfc(self, sfc_descriptor, database, sfc_uuid, sfc_name, create_vnf_fn, destroy_vnf_fn):
         pass
 
-    def destroy_sfc(self, sfc_id, core):
+    def destroy_sfc(self, sfc_id, destroy_vnf_fn):
         pass
 
     def dump_sfc_descriptor(self, sfc_descriptor):

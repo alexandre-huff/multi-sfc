@@ -1,0 +1,6 @@
+{
+    "category": "LB",
+    "type": "general",
+    "platform": "osm",
+    "description": "Ubuntu iptables LB net1"
+}

@@ -73,7 +73,8 @@ class OSMAgent(implements(NFVOAgents)):
         vim_agent = OpenStackAgent(vim['vim_url'],
                                    vim['vim_user'],
                                    vim['vim_password'],
-                                   vim['vim_tenant_name']
+                                   vim['vim_tenant_name'],
+                                   self.vim_name
                                    )
         return vim_agent
 
@@ -91,7 +92,7 @@ class OSMAgent(implements(NFVOAgents)):
             vdu0 = vnf['vdur'][0]
 
             # OSM does not show a VNF name, just VDU names
-            vnf_name = vnf['id']
+            vnf_name = vdu0.get('name')
 
             mgmt_url = vnf.get('ip-address')
             instance_name = vdu0.get('name')
@@ -301,21 +302,24 @@ class OSMAgent(implements(NFVOAgents)):
             # So, by removing the first VNF we can conclude that if sfp is empty, then this NS
             # is just a VNF, not an SFC.
             if len(sfp) > 1:
-                policy = ns['nsd']['vnffgd'][0]['classifier'][0]['match-attributes'][0]
-                policy.pop('id')
+                matches = ns['nsd']['vnffgd'][0]['classifier'][0]['match-attributes']
+                policies = []
+                for match in matches:
+                    match.pop('id')
+                    policies.append(match)
 
                 ns_list.append({
                     'id': ns_id,
                     'name': name,
                     'status': state,
-                    'policy': policy,
+                    'policy': policies,
                     'vnf_chain': sfp,
                     'platform': OSM_NFVO
                 })
 
         return ns_list
 
-    def get_policies(self):
+    def get_available_policies(self):
         """Returns the OSM classifier ACL"""
 
         return {
@@ -435,39 +439,35 @@ class OSMAgent(implements(NFVOAgents)):
         template = yaml.safe_load(template)
         return template
 
-    def get_configured_policies(self, sfc_descriptor):
+    def get_policies(self, sfc_descriptor):
         """Retrieves configured policies in the sfc descriptor
 
         :return: a list containing key:value elements
         """
+        matches = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['classifier'][0]['match-attributes']
 
-        criteria = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['classifier'][0]['match-attributes'][0]
-
-        items = []
-        for item in criteria:
-            items.append({item: criteria[item]})
-
-        return items
+        return matches
 
     def get_sfc_input_security_policy_data(self, sfc_descriptor):
         """Retrieves security policy data required to configure security policies
 
         :param sfc_descriptor:
-        :return: IP protocol number, port_range_min, port_range_max
+        :return: a list of dict containing the IP protocol number, port_range_min, port_range_max
         """
-        criteria = self.get_configured_policies(sfc_descriptor)
-        proto = None
-        min_port = None
-        max_port = None
+        # currently OSM Agent only implements one classifier per SFP
+        matches = self.get_policies(sfc_descriptor)
 
-        for item in criteria:
-            if 'ip-proto' in item:
-                proto = item['ip-proto']
-            elif 'destination-port' in item:
-                min_port = item['destination-port']
-                max_port = item['destination-port']
+        policies = []
+        for match in matches:
+            data = {}
+            if 'ip-proto' in match:
+                data['proto'] = match['ip-proto']
+            if 'destination-port' in match:
+                data['min_port'] = match['destination-port']
+                data['max_port'] = match['destination-port']
+            policies.append(data)
 
-        return proto, min_port, max_port
+        return policies
 
     def add_constituent_vnf_and_virtual_link(self, sfc_descriptor, vnfd_name, vnf_nsd, input_vnf=False):
         """Adds VNF and its VL to the NSD
@@ -747,24 +747,29 @@ class OSMAgent(implements(NFVOAgents)):
 
         return sfc_descriptor
 
-    def configure_policies(self, sfc_descriptor, acl):
-        """Configure ACL rules on the Tacker SFC classifier"""
+    def configure_policies(self, sfc_descriptor, policies):
+        """Configure ACL rules on the OSM SFC classifier"""
 
-        criteria = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['classifier'][0]['match-attributes'][0]
+        matches = sfc_descriptor['nsd:nsd-catalog']['nsd'][0]['vnffgd'][0]['classifier'][0]['match-attributes']
+        matches.clear()  # remove the partial data of the first match to build all of them in one shot (simplify)
 
-        # TODO Needs to implement a criteria parser and validator as implemented in tacker_agent
-        criteria.update(acl)
+        for index, policy in enumerate(policies, start=1):
+            # TODO Needs to implement a policy parser and validator as implemented in tacker_agent
+            match = dict(policy)
+            match['id'] = 'match{}'.format(index)
+            matches.append(match)
 
         return sfc_descriptor
 
-    def create_sfc(self, sfc_descriptor, database, core, sfc_uuid, sfc_name):
+    def create_sfc(self, sfc_descriptor, database, sfc_uuid, sfc_name, create_vnf_fn, destroy_vnf_fn):
         """Sends all VNFDs and the NSD to the OSM NFVO and instantiates the NS
 
         :param sfc_descriptor:
         :param database:
-        :param core:
         :param sfc_uuid:
-        :param sfc_name
+        :param sfc_name:
+        :param create_vnf_fn: callback function from the core module
+        :param destroy_vnf_fn: callback function from the core module
         :return: a dict containing:
 
             - a list of *vnf_instances* of the created SFC
@@ -845,7 +850,7 @@ class OSMAgent(implements(NFVOAgents)):
         except NFVOAgentsException as e:
             logger.error("NS %s could not be created! %s", sfc_name, e.reason)
             logger.error("Running rollback actions...")
-            self.destroy_sfc(sfc_name, core)
+            self.destroy_sfc(sfc_name, destroy_vnf_fn)
             raise NFVOAgentsException(e.status, e.reason)
 
         except ClientException as e:
@@ -861,11 +866,11 @@ class OSMAgent(implements(NFVOAgents)):
             'ns_id': ns_id
         }
 
-    def destroy_sfc(self, sfc_id, core):
+    def destroy_sfc(self, sfc_id, destroy_vnf_fn):
         """ Destroys an NS and its related NSD and VNFDs
 
         :param sfc_id:
-        :param core: not used by this agent
+        :param destroy_vnf_fn: callback function from the core module
         """
 
         try:

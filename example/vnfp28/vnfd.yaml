@@ -1,0 +1,118 @@
+tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
+
+description: Ubuntu Branch Template
+
+metadata:
+  template_name: ubuntu-branch-vnfd
+
+topology_template:
+  node_templates:
+    VDU1:
+      type: tosca.nodes.nfv.VDU.Tacker
+      capabilities:
+        nfv_compute:
+          properties:
+            num_cpus: 1
+            mem_size: 256 MB
+            disk_size: 10 GB
+      properties:
+        image: ubuntu-server
+        availability_zone: nova
+        mgmt_driver: noop
+        name: linux-branch
+        key_name: mykey
+        user_data_format: RAW
+        user_data: |
+          #!/bin/sh
+          sed -i -e 's/\ localhost/\ localhost\ linux-branch/' /etc/hosts
+          echo 'ubuntu:123456' | chpasswd
+          locale-gen pt_BR.UTF-8
+          timedatectl set-timezone America/Sao_Paulo
+          echo '200 tcp' >> /etc/iproute2/rt_tables
+          echo '201 udp' >> /etc/iproute2/rt_tables
+          cat <<EOF >> /etc/network/interfaces.d/50-cloud-init.cfg
+              post-up route del default dev \$IFACE
+
+          auto ens4
+          iface ens4 inet dhcp
+
+          auto ens5
+          iface ens5 inet dhcp
+              post-up iptables -t mangle -A PREROUTING -p tcp -j MARK --set-mark 6
+              post-up iptables -t mangle -A PREROUTING -p udp -j MARK --set-mark 17
+              post-up ip rule add fwmark 6 table tcp
+              post-up ip rule add fwmark 17 table udp
+              post-up ip route add 10.10.0.0/24 dev ens4 table tcp
+              post-up ip route add 10.10.0.0/24 dev ens5 table udp
+              post-down iptables -t mangle -D PREROUTING -p tcp -j MARK --set-mark 6
+              post-down iptables -t mangle -D PREROUTING -p udp -j MARK --set-mark 17
+              post-down ip rule del fwmark 6 table tcp
+              post-down ip rule del fwmark 17 table udp
+              post-down ip route del 10.10.0.0/24 dev ens4 table tcp
+              post-down ip route del 10.10.0.0/24 dev ens5 table udp
+          EOF
+          systemctl restart networking.service
+          /bin/echo 1 > /proc/sys/net/ipv4/ip_forward
+          /bin/echo 0 > /proc/sys/net/ipv4/conf/all/send_redirects
+          cat <<EOF > /etc/sysctl.d/60-local-forwarder.conf
+          #Huff
+          net.ipv4.ip_forward=1
+          net.ipv4.conf.all.send_redirects=0
+          EOF
+          cat <<EOF >> /home/ubuntu/.ssh/authorized_keys
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/lymHq+InhmVI48dNWEnJXyQeVnID4l5UhY0yKm7K/yuAjPE+XsYc0IyDaNcsQYgdixX8dCvTsXQAoTAV2VWtKNSgl+FUbg6fPjfTMfVkIAVTb2uTmwrM0XUm+DF3Rl3/3PTM2qUJzU71WfkEV4FtUYVifp4ID8DOKelqX3/TsK5HRuE1IdulLAt3p4wox7HwJm0NK4UbEn5xvXfXLCsj8Uv/cBdZ18bE9/XPl2CA1RztRVNcHt12sM034LdlG2FgK03BAPcFDKKw/nAac9MpKRo9ANfA/uxBUJJaLq40wOvCBYUvZStG34ErZnVmBnhsH57yd7HfYny2HSztTVwF alexandre@huff
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC3lOPp2GaeDZSrSOkDMsE+sYaKfx+YHUKarMT+/CaxBEZQzP9Dg0COlL3TQ0f4j6FYmU6+Jq7qhnP966BrXoYFzx2S/P8UdWHspFKmW4opRJioS6l3KktHLatF7AE/K2n2sk22BbLNsq1CwUDyBnp+2iQxgD9FQph0iszkiY9lPIgcSNZu15sZ+C7kbQDoZ0DldjGezC8Swg3UefGLuPkVeA8wIZsV30fWwyJ8qjrT+vJ1vHm4pU00kigIUWE5dhnYHp1xufxL4lLLBwsfwJyXS2Uvs+by0oTQ+uEH8rjQKjfVKoxsNOjHPe+b6bd98q7S71dqGr+z0nbFvVwowmsp alexandre@huff18
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDuKz0LOlR9f5RM1vJDcGfmWbhj0vIH78+c6VL1eotJwaaCd0pWChfapZM+ITU02ZuAYEBlkMGrW5AcUGrdRO75O/RsvTxX1dcmAyt5PBb+V1P5B0WpBIknTChrQqWR3nPtmVsmdWcn6aInYWXZLcd30mQisTobkfnW8xc4AM6fRbFDiweexJXOiS6xPt4YtJjW9W4yEiJS1gSqMDZZYlSj+dmuu1hcwkeaNvsNskhT9IciYDsWKYO8gmIMtCxSmL43swkC/nm1HcZZYqzkL6HQiI1ntg0inMbkR+NfB/GB0bZhKanuZs1KyQosq/hzyahiB004bUCNMDb0XPLgdwov alexandre@tacker-vim
+          EOF
+
+    CP281:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        management: true
+        order: 0
+#        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL281
+        - virtualBinding:
+            node: VDU1
+
+    CP282:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 1
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL282
+        - virtualBinding:
+            node: VDU1
+    
+    CP283:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 2
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL283
+        - virtualBinding:
+            node: VDU1
+
+    VL281:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net_mgmt
+        vendor: Tacker
+
+    VL282:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net0
+        vendor: Tacker
+    
+    VL283:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net0
+        vendor: Tacker

@@ -1,0 +1,88 @@
+tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
+
+description: Ubuntu Server Template
+
+metadata:
+  template_name: ubuntu-nginx-vnfd
+
+topology_template:
+  node_templates:
+    VDU1:
+      type: tosca.nodes.nfv.VDU.Tacker
+      capabilities:
+        nfv_compute:
+          properties:
+            num_cpus: 1
+            mem_size: 256 MB
+            disk_size: 10 GB
+      properties:
+        image: ubuntu-server
+        availability_zone: nova
+        mgmt_driver: noop
+        name: nginx-lb
+        key_name: mykey
+        user_data_format: RAW
+        user_data: |
+          #!/bin/sh
+          sed -i -e 's/\localhost/\localhost\ nginx-lb/' /etc/hosts
+          cat <<EOF >> /etc/network/interfaces.d/50-cloud-init.cfg
+              post-up route del default dev \$IFACE
+
+          auto ens4
+          iface ens4 inet dhcp
+          EOF
+          echo 'ubuntu:123456' | chpasswd
+          cat <<EOF >> /home/ubuntu/.ssh/authorized_keys
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/lymHq+InhmVI48dNWEnJXyQeVnID4l5UhY0yKm7K/yuAjPE+XsYc0IyDaNcsQYgdixX8dCvTsXQAoTAV2VWtKNSgl+FUbg6fPjfTMfVkIAVTb2uTmwrM0XUm+DF3Rl3/3PTM2qUJzU71WfkEV4FtUYVifp4ID8DOKelqX3/TsK5HRuE1IdulLAt3p4wox7HwJm0NK4UbEn5xvXfXLCsj8Uv/cBdZ18bE9/XPl2CA1RztRVNcHt12sM034LdlG2FgK03BAPcFDKKw/nAac9MpKRo9ANfA/uxBUJJaLq40wOvCBYUvZStG34ErZnVmBnhsH57yd7HfYny2HSztTVwF alexandre@huff
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC3lOPp2GaeDZSrSOkDMsE+sYaKfx+YHUKarMT+/CaxBEZQzP9Dg0COlL3TQ0f4j6FYmU6+Jq7qhnP966BrXoYFzx2S/P8UdWHspFKmW4opRJioS6l3KktHLatF7AE/K2n2sk22BbLNsq1CwUDyBnp+2iQxgD9FQph0iszkiY9lPIgcSNZu15sZ+C7kbQDoZ0DldjGezC8Swg3UefGLuPkVeA8wIZsV30fWwyJ8qjrT+vJ1vHm4pU00kigIUWE5dhnYHp1xufxL4lLLBwsfwJyXS2Uvs+by0oTQ+uEH8rjQKjfVKoxsNOjHPe+b6bd98q7S71dqGr+z0nbFvVwowmsp alexandre@huff18
+          EOF
+          locale-gen pt_BR.UTF-8
+          timedatectl set-timezone America/Sao_Paulo
+          systemctl restart networking.service
+          apt-get update
+          apt-get -y install nginx-core
+          cat <<EOF >> /etc/nginx/nginx.conf
+          stream {
+              server {
+                  listen 8080;
+                  proxy_pass 10.10.0.57:8080;
+                  proxy_buffer_size 50m;
+              }
+          }
+          EOF
+          systemctl restart nginx.service
+
+    CP291:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        management: true
+        order: 0
+#        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL291
+        - virtualBinding:
+            node: VDU1
+
+    CP292:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 1
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL292
+        - virtualBinding:
+            node: VDU1
+
+    VL291:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net_mgmt
+        vendor: Tacker
+
+    VL292:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net0
+        vendor: Tacker

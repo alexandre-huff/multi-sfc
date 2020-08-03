@@ -125,7 +125,7 @@ def include_sfc_traffic_origin():
 
 @app.route('/sfc/acl/<sfc_uuid>', methods=['GET'])
 def list_acl(sfc_uuid):
-    return jsonify(core.get_policies(sfc_uuid))
+    return jsonify(core.list_available_acl(sfc_uuid))
 
 
 @app.route('/sfc/acl', methods=['POST'])

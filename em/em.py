@@ -1,13 +1,11 @@
 #!/usr/bin/env python
 
 import json
-# import requests
 import os
-# from eve import Eve
 from flask import request, jsonify, Flask
 from subprocess import Popen, PIPE
 
-# app = Eve()
+
 app = Flask(__name__)
 
 

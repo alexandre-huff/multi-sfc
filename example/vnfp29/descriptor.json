@@ -1,0 +1,6 @@
+{
+    "category": "LB",
+    "type": "general",
+    "platform": "tacker",
+    "description": "Ubuntu nginx LB net0"
+}

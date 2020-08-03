@@ -1,0 +1,7 @@
+{
+    "category": "GRE Tunnel",
+    "type": "general",
+    "platform": "osm",
+    "description": "Ubuntu GRE Public net1",
+    "tunnel": "gre"
+}

@@ -1,6 +1,6 @@
 {
-    "category": "Forwarder",
+    "category": "LB",
     "type": "general",
     "platform": "tacker",
-    "description": "Ubuntu Forwarder 4 net1"
+    "description": "Ubuntu iptables LB net0"
 }

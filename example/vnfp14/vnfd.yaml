@@ -20,7 +20,7 @@ topology_template:
         availability_zone: nova
         mgmt_driver: noop
         name: vpn-client-public
-        key_name: huff_key
+        key_name: mykey
         user_data_format: RAW
         user_data: |
             #!/bin/sh
@@ -93,7 +93,7 @@ topology_template:
       properties:
         management: true
         order: 0
-        anti_spoofing_protection: false
+#        anti_spoofing_protection: false
       requirements:
         - virtualLink:
             node: VL141

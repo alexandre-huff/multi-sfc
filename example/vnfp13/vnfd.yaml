@@ -20,7 +20,7 @@ topology_template:
         availability_zone: nova
         mgmt_driver: noop
         name: linux-forwarder2
-        key_name: huff_key
+        key_name: mykey
         user_data_format: RAW
         user_data: |
           #!/bin/sh
@@ -43,14 +43,18 @@ topology_template:
           net.ipv4.ip_forward=1
           net.ipv4.conf.all.send_redirects=0
           EOF
-          echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC69CsT895dFfNG6dTnYN6pUPw4dQXdw0i4QqH8DaJFX8FGbb8H97zT7JWsrVUOZvRwBHl1Pg36TRDv4iu67tHoso6pMf78lGeNgktSR9qbYVkHha4EOWjNiG19iVyhsGp2aZdqP4VkCOQ2n+zqLRcUNLY4Q1w9rG95w9yYtBLPDi5LtjMQSS3Y2cIUVwmA9OKtC+2mPNm3TaqQzLZrEYHrffGWtenZ+puMDe4ZBZcn6b7Cd8iECcXdANgDgF15igOvfleTghokDgwAFJRbVJfQMUbZQwX3yDgAJODWWsE3oqfjcOE2EMd0bMZM6Gj0GQ+VMVJSR6Dw5ZNtEVFJE9I7 alexandre@tacker-vim" >> /home/ubuntu/.ssh/authorized_keys
+          cat <<EOF >> /home/ubuntu/.ssh/authorized_keys
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/lymHq+InhmVI48dNWEnJXyQeVnID4l5UhY0yKm7K/yuAjPE+XsYc0IyDaNcsQYgdixX8dCvTsXQAoTAV2VWtKNSgl+FUbg6fPjfTMfVkIAVTb2uTmwrM0XUm+DF3Rl3/3PTM2qUJzU71WfkEV4FtUYVifp4ID8DOKelqX3/TsK5HRuE1IdulLAt3p4wox7HwJm0NK4UbEn5xvXfXLCsj8Uv/cBdZ18bE9/XPl2CA1RztRVNcHt12sM034LdlG2FgK03BAPcFDKKw/nAac9MpKRo9ANfA/uxBUJJaLq40wOvCBYUvZStG34ErZnVmBnhsH57yd7HfYny2HSztTVwF alexandre@huff
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC3lOPp2GaeDZSrSOkDMsE+sYaKfx+YHUKarMT+/CaxBEZQzP9Dg0COlL3TQ0f4j6FYmU6+Jq7qhnP966BrXoYFzx2S/P8UdWHspFKmW4opRJioS6l3KktHLatF7AE/K2n2sk22BbLNsq1CwUDyBnp+2iQxgD9FQph0iszkiY9lPIgcSNZu15sZ+C7kbQDoZ0DldjGezC8Swg3UefGLuPkVeA8wIZsV30fWwyJ8qjrT+vJ1vHm4pU00kigIUWE5dhnYHp1xufxL4lLLBwsfwJyXS2Uvs+by0oTQ+uEH8rjQKjfVKoxsNOjHPe+b6bd98q7S71dqGr+z0nbFvVwowmsp alexandre@huff18
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDuKz0LOlR9f5RM1vJDcGfmWbhj0vIH78+c6VL1eotJwaaCd0pWChfapZM+ITU02ZuAYEBlkMGrW5AcUGrdRO75O/RsvTxX1dcmAyt5PBb+V1P5B0WpBIknTChrQqWR3nPtmVsmdWcn6aInYWXZLcd30mQisTobkfnW8xc4AM6fRbFDiweexJXOiS6xPt4YtJjW9W4yEiJS1gSqMDZZYlSj+dmuu1hcwkeaNvsNskhT9IciYDsWKYO8gmIMtCxSmL43swkC/nm1HcZZYqzkL6HQiI1ntg0inMbkR+NfB/GB0bZhKanuZs1KyQosq/hzyahiB004bUCNMDb0XPLgdwov alexandre@tacker-vim
+          EOF
 
     CP131:
       type: tosca.nodes.nfv.CP.Tacker
       properties:
         management: true
         order: 0
-        anti_spoofing_protection: false
+#        anti_spoofing_protection: false
       requirements:
         - virtualLink:
             node: VL131

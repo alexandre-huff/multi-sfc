@@ -434,13 +434,13 @@ def list_vnfs():
     vnfs = response['vnfs']
 
     if vnfs:
-        table = PrettyTable(["SEQ", "VNF ID", "Instance Name", "Mgmt Address", "Status", "Platform",
-                             "Domain", "Platform Instance", "Platform VIM"])
+        table = PrettyTable(["SEQ", "VNF ID", "VNF Name", "Mgmt Address", "Status", "Platform",
+                             "Domain", "Platform Instance", "VIM Platform"])
 
         index = 0
         for vnf in vnfs:
             index += 1
-            row = [index, vnf['vnf_id'], vnf['instance_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform'],
+            row = [index, vnf['vnf_id'], vnf['vnf_name'], vnf['mgmt_url'], vnf['vnf_status'], vnf['platform'],
                    vnf['domain_name'], vnf['nfvo_name'], vnf['vim_name']]
             table.add_row(row)
 
@@ -465,7 +465,7 @@ def create_sfc():
     domain_catalog = requests.get(domain_url, headers=headers).json()
 
     while True:
-        header = ["Domain", "Platform Instance", "Tenant", "VIM Name", "Tunnel"]
+        header = ["Domain", "Platform Instance", "Project", "VIM Name", "Tunnel"]
         rows = []
         for item in domain_catalog:
             row = [item['domain_name'], item['nfvo_name'], item['tenant_name'], item['vim_name'], item['tunnel']]
@@ -631,44 +631,63 @@ def create_sfc():
             print(response['status'], response['reason'], sep=': ')
             return
 
-    # ACL List
-    response = requests.get(acl_url + '/%s' % sfc_uuid, headers=headers).json()
-    try:
-        acl_list = response['acl']
-    except KeyError:
-        print(response['status'], response['reason'], sep=': ')
-        return
-
-    table = PrettyTable(['ID', 'Description'], sortby='ID')
-
-    for acl_id, desc in acl_list.items():
-        table.add_row([acl_id, desc])
-
-    print("\n", table, sep="")
-
-    print("Add the criteria by their respective ID (0 for done, or -1 to exit)")
-
-    acl = {}
+    # Add policy criterias, can be added more than one
+    policies = []
+    policy_num = 0
     while True:
-        acl_criteria = input('ID > ')
-
-        if acl_criteria == "0":
-            break
-
-        if acl_criteria == "-1":
+        # get ACL list
+        response = requests.get(acl_url + '/%s' % sfc_uuid, headers=headers).json()
+        try:
+            acl_list = response['acl']
+        except KeyError:
+            print(response['status'], response['reason'], sep=': ')
             return
 
-        if acl_criteria not in acl_list.keys():
-            print("Invalid Criteria!")
-            continue
+        table = PrettyTable(['ID', 'Description'], sortby='ID')
 
-        acl_value = input('Value > ')
+        for acl_id, desc in acl_list.items():
+            table.add_row([acl_id, desc])
 
-        acl[acl_criteria] = acl_value
+        print("\n", table, sep="")
+        policy_num += 1
+        print("Add criterias to the Policy-%d (0 for done, or -1 to exit)" % policy_num)
+
+        acl = {}
+        while True:
+            acl_criteria = input('ID > ')
+
+            if acl_criteria == "0":
+                break
+
+            if acl_criteria == "-1":
+                return
+
+            if acl_criteria not in acl_list.keys():
+                print("Invalid Criteria!")
+                continue
+
+            acl_value = input('Value > ')
+
+            acl[acl_criteria] = acl_value
+
+        policies.append(acl)
+
+        print("\nAdd more classifier policies? (-1 to exit)\n1. Yes\n2. No")
+        while True:
+            op = int(input("> "))
+            if op not in (-1, 1, 2):
+                print("Invalid option!")
+                continue
+            break
+
+        if op == -1:
+            return
+        if op == 2:
+            break
 
     acl_data = {
-        'acl': acl,
-        'sfc_uuid': sfc_uuid
+        'sfc_uuid': sfc_uuid,
+        'policies': policies
     }
 
     # send ACL criteria to SFC_Core

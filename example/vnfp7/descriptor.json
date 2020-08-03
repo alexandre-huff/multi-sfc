@@ -2,5 +2,5 @@
     "category": "Linux",
     "type": "general",
     "platform": "tacker",
-    "description": "Ubuntu Server Floating net0"
+    "description": "Ubuntu Server net0"
 }

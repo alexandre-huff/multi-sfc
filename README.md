@@ -1,6 +1,6 @@
 # Multi-SFC
 
-Multi-SFC is a framework for composing and managing the lifecycle of multiple SFC segments distributed on different clouds/domains/NFVOs. This framework was specified according to the ETSI NFV-MANO architecture and aims to simplify the composition and lifecycle management of SFCs with multiple segments on multiple NFV platforms. SFC compositions also can be done concurrently. Currently, the Muti-SFC framework works with Tacker and OSM NFV orchestrators, both using OpenStack as its VIM.
+Multi-SFC is a framework for composing and managing the lifecycle of multiple SFC segments distributed on different clouds/domains/NFVOs. This framework was specified according to the ETSI NFV-MANO architecture and aims to simplify the composition and lifecycle management of SFCs with multiple segments on multiple NFV platforms. SFC compositions also can be done concurrently. Currently, the Muti-SFC framework works with Tacker and OSM NFV orchestrators, both using OpenStack as their corresponding VIM.
 
 ## Prerequisites
 
@@ -16,8 +16,8 @@ Multi-SFC has the following software prerequisites:
 
 ## Installing
 
-* OpenStack and Tacker can be installed via *devstack*. The implementation and testing was done using the *Queens* version.
-* Open Source MANO (OSM) can be installed using the *Default installation procedure* available in the above OSM link.
+* OpenStack and Tacker can be installed via *devstack*. The implementation and testing was done using both *Train* and *Ussuri* versions.
+* Open Source MANO (OSM) can be installed using the *Default installation procedure*. Please, check out the above OSM link.
 * Default configuration for MongoDB and Memcached should work with the framework.
 
 ## Running
@@ -31,9 +31,9 @@ Multi-SFC has the following software prerequisites:
 ```./client```
 
 * There are a few VNF Packages in the [example](example) directory that can be used as *VNF Package* in Client Application.
-* Generic VNF Packages were tested using [Xenial Ubuntu Cloud Images](https://cloud-images.ubuntu.com/xenial/)
+* Generic VNF Packages were tested using [Bionic Ubuntu Cloud Images](https://cloud-images.ubuntu.com/bionic/)
 
-## Built With
+## Built using
 
 * [Python 3](https://www.python.org/)
 

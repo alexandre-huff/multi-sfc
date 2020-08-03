@@ -1,0 +1,80 @@
+tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
+
+description: Alpine GRE Template
+
+metadata:
+  template_name: alpine-gre-vnfd
+
+topology_template:
+  node_templates:
+    VDU1:
+      type: tosca.nodes.nfv.VDU.Tacker
+      capabilities:
+        nfv_compute:
+          properties:
+            num_cpus: 1
+            mem_size: 256 MB
+            disk_size: 1 GB
+      properties:
+        image: alpine-tunnel
+        availability_zone: nova
+        mgmt_driver: noop
+        name: alpine-gre
+        key_name: mykey
+        user_data_format: RAW
+        user_data: |
+          #!/bin/ash
+          date
+
+    CP311:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        management: true
+        order: 0
+#        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL311
+        - virtualBinding:
+            node: VDU1
+
+    CP312:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 1
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL312
+        - virtualBinding:
+            node: VDU1
+            
+    CP313:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 2
+#        MASQUERADE does not work on disabling port_security (anti_spoofing_protection)
+#        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL313
+        - virtualBinding:
+            node: VDU1
+
+    VL311:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net_mgmt
+        vendor: Tacker
+
+    VL312:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net0
+        vendor: Tacker
+
+    VL313:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: public
+        vendor: Tacker

@@ -47,13 +47,16 @@ IPSEC_CHARON_PORT = 4500
 VXLAN_PROTO = 17
 VXLAN_PORT = 4789
 
+GRE_PROTO = 47
+
 TUN_EM_PROTO = 6
 TUN_EM_PORT = 8000
 
 protocols = {
     1: 'icmp',
     6: 'tcp',
-    17: 'udp'
+    17: 'udp',
+    47: 'gre'
 }
 
 
@@ -64,7 +67,8 @@ def unique_id():
 
 tunnel_config_scripts = {
     'vxlan': 'em/vxlan.sh',
-    'ipsec': 'em/ipsec.sh'
+    'ipsec': 'em/ipsec.sh',
+    'gre'  : 'em/gre.sh'
 }
 
 

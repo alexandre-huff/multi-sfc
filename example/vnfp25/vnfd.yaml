@@ -1,0 +1,79 @@
+tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
+
+description: Alpine DPI Branch Template
+
+metadata:
+  template_name: alpine-dpi-vnfd
+
+topology_template:
+  node_templates:
+    VDU1:
+      type: tosca.nodes.nfv.VDU.Tacker
+      capabilities:
+        nfv_compute:
+          properties:
+            num_cpus: 1
+            mem_size: 256 MB
+            disk_size: 1 GB
+      properties:
+        image: alpine-dpi
+        availability_zone: nova
+        mgmt_driver: noop
+        name: alpine-dpi
+        key_name: mykey
+        user_data_format: RAW
+        user_data: |
+          #!/bin/sh
+          date
+
+    CP251:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        management: true
+        order: 0
+#        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL251
+        - virtualBinding:
+            node: VDU1
+
+    CP252:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 1
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL252
+        - virtualBinding:
+            node: VDU1
+
+    CP253:
+      type: tosca.nodes.nfv.CP.Tacker
+      properties:
+        order: 2
+        anti_spoofing_protection: false
+      requirements:
+        - virtualLink:
+            node: VL253
+        - virtualBinding:
+            node: VDU1
+
+    VL251:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net_mgmt
+        vendor: Tacker
+
+    VL252:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net0
+        vendor: Tacker
+
+    VL253:
+      type: tosca.nodes.nfv.VL
+      properties:
+        network_name: net0
+        vendor: Tacker

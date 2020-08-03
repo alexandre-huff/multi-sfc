@@ -16,7 +16,7 @@ NAT=$6
 
 do_start() {
     # to install IPSec and etc...
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install strongswan -y
+    # sudo DEBIAN_FRONTEND=noninteractive apt-get install strongswan -y
 
     sudo chmod 666 /etc/ipsec.secrets
     sudo cat <<EOF > /etc/ipsec.secrets
