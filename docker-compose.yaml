@@ -1,0 +1,23 @@
+version: '3'
+
+services:
+    multisfc:
+        build: .
+        image: multisfc
+        command: /app/server.py
+        network_mode: host
+        hostname: multisfc
+        volumes:
+            - ${PWD}:/app
+            # - ${PWD}/domain-config.yaml:/app/domain-config.yaml:ro
+        depends_on:
+            - mongodb
+            - memcached
+
+    mongodb:
+        image: mongo
+        network_mode: host
+
+    memcached:
+        image: memcached
+        network_mode: host
