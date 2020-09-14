@@ -1,9 +1,9 @@
 tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
 
-description: Ubuntu Forwarder Template
+description: Ubuntu LB Template
 
 metadata:
-  template_name: ubuntu-forwarder4-vnfd
+  template_name: ubuntu-iptables-lb-vnfd
 
 topology_template:
   node_templates:
@@ -19,12 +19,12 @@ topology_template:
         image: ubuntu-server
         availability_zone: nova
         mgmt_driver: noop
-        name: linux-forwarder4
+        name: iptables-lb
         key_name: mykey
         user_data_format: RAW
         user_data: |
           #!/bin/sh
-          sed -i -e 's/\ localhost/\ localhost\ linux-forwarder4/' /etc/hosts
+          sed -i -e 's/\ localhost/\ localhost\ iptables-lb/' /etc/hosts
           echo 'ubuntu:123456' | chpasswd
           locale-gen pt_BR.UTF-8
           timedatectl set-timezone America/Sao_Paulo
@@ -43,14 +43,44 @@ topology_template:
           net.ipv4.ip_forward=1
           net.ipv4.conf.all.send_redirects=0
           EOF
-          echo "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC69CsT895dFfNG6dTnYN6pUPw4dQXdw0i4QqH8DaJFX8FGbb8H97zT7JWsrVUOZvRwBHl1Pg36TRDv4iu67tHoso6pMf78lGeNgktSR9qbYVkHha4EOWjNiG19iVyhsGp2aZdqP4VkCOQ2n+zqLRcUNLY4Q1w9rG95w9yYtBLPDi5LtjMQSS3Y2cIUVwmA9OKtC+2mPNm3TaqQzLZrEYHrffGWtenZ+puMDe4ZBZcn6b7Cd8iECcXdANgDgF15igOvfleTghokDgwAFJRbVJfQMUbZQwX3yDgAJODWWsE3oqfjcOE2EMd0bMZM6Gj0GQ+VMVJSR6Dw5ZNtEVFJE9I7 alexandre@tacker-vim" >> /home/ubuntu/.ssh/authorized_keys
+          cat <<EOF >> /home/ubuntu/.ssh/authorized_keys
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC/lymHq+InhmVI48dNWEnJXyQeVnID4l5UhY0yKm7K/yuAjPE+XsYc0IyDaNcsQYgdixX8dCvTsXQAoTAV2VWtKNSgl+FUbg6fPjfTMfVkIAVTb2uTmwrM0XUm+DF3Rl3/3PTM2qUJzU71WfkEV4FtUYVifp4ID8DOKelqX3/TsK5HRuE1IdulLAt3p4wox7HwJm0NK4UbEn5xvXfXLCsj8Uv/cBdZ18bE9/XPl2CA1RztRVNcHt12sM034LdlG2FgK03BAPcFDKKw/nAac9MpKRo9ANfA/uxBUJJaLq40wOvCBYUvZStG34ErZnVmBnhsH57yd7HfYny2HSztTVwF alexandre@huff
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC3lOPp2GaeDZSrSOkDMsE+sYaKfx+YHUKarMT+/CaxBEZQzP9Dg0COlL3TQ0f4j6FYmU6+Jq7qhnP966BrXoYFzx2S/P8UdWHspFKmW4opRJioS6l3KktHLatF7AE/K2n2sk22BbLNsq1CwUDyBnp+2iQxgD9FQph0iszkiY9lPIgcSNZu15sZ+C7kbQDoZ0DldjGezC8Swg3UefGLuPkVeA8wIZsV30fWwyJ8qjrT+vJ1vHm4pU00kigIUWE5dhnYHp1xufxL4lLLBwsfwJyXS2Uvs+by0oTQ+uEH8rjQKjfVKoxsNOjHPe+b6bd98q7S71dqGr+z0nbFvVwowmsp alexandre@huff18
+          ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDuKz0LOlR9f5RM1vJDcGfmWbhj0vIH78+c6VL1eotJwaaCd0pWChfapZM+ITU02ZuAYEBlkMGrW5AcUGrdRO75O/RsvTxX1dcmAyt5PBb+V1P5B0WpBIknTChrQqWR3nPtmVsmdWcn6aInYWXZLcd30mQisTobkfnW8xc4AM6fRbFDiweexJXOiS6xPt4YtJjW9W4yEiJS1gSqMDZZYlSj+dmuu1hcwkeaNvsNskhT9IciYDsWKYO8gmIMtCxSmL43swkC/nm1HcZZYqzkL6HQiI1ntg0inMbkR+NfB/GB0bZhKanuZs1KyQosq/hzyahiB004bUCNMDb0XPLgdwov alexandre@tacker-vim
+          EOF
+          cat <<EOF > /home/ubuntu/balancer2.sh
+          #!/bin/bash
+          # This script does load balancing over two servers based on the hash of the source IP address.
+          # All traffic of the same src IP address is refirected to the same server
+          PROTO=tcp
+          DPORT=8080
+          LB_IP=10.10.x.x
+          SERVER1_IP=10.10.x.x
+          SERVER2_IP=10.10.x.x
+
+          sudo iptables -t nat -F
+          sudo iptables -t mangle -F
+
+          sudo iptables -t mangle -A PREROUTING -d \$LB_IP -p \$PROTO --dport \$DPORT \\
+                  -j HMARK --hmark-tuple src --hmark-mod 2 \\
+                  --hmark-rnd 0xcafeface --hmark-offset 100
+
+          sudo iptables -t nat -A PREROUTING -m mark --mark 100 \\
+                  -j DNAT --to-destination \$SERVER1_IP
+          sudo iptables -t nat -A PREROUTING -m mark --mark 101 \\
+                  -j DNAT --to-destination \$SERVER2_IP
+
+          sudo iptables -t nat -A POSTROUTING -d \$SERVER1_IP -p \$PROTO --dport \$DPORT -j SNAT --to-source \$LB_IP
+          sudo iptables -t nat -A POSTROUTING -d \$SERVER2_IP -p \$PROTO --dport \$DPORT -j SNAT --to-source \$LB_IP
+          EOF
+          chmod 755 /home/ubuntu/balancer2.sh
 
     CP161:
       type: tosca.nodes.nfv.CP.Tacker
       properties:
         management: true
         order: 0
-        anti_spoofing_protection: false
+#        anti_spoofing_protection: false
       requirements:
         - virtualLink:
             node: VL161
@@ -77,13 +107,5 @@ topology_template:
     VL162:
       type: tosca.nodes.nfv.VL
       properties:
-        network_name: net1
+        network_name: net0
         vendor: Tacker
-
-#    FIP132:
-#      type: tosca.nodes.network.FloatingIP
-#      properties:
-#        floating_network: public
-#      requirements:
-#        - link:
-#          node: CP162

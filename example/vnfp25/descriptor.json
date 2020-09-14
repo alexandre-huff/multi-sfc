@@ -2,5 +2,5 @@
     "category": "DPI",
     "type": "general",
     "platform": "tacker",
-    "description": "Alpine DPI net0-net1"
+    "description": "Alpine DPI Branch net0"
 }

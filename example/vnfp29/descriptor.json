@@ -2,5 +2,5 @@
     "category": "LB",
     "type": "general",
     "platform": "tacker",
-    "description": "Ubuntu iptables LB net0"
+    "description": "Ubuntu nginx LB net0"
 }

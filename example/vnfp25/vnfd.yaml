@@ -1,6 +1,6 @@
 tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
 
-description: Alpine DPI Template
+description: Alpine DPI Branch Template
 
 metadata:
   template_name: alpine-dpi-vnfd
@@ -31,7 +31,7 @@ topology_template:
       properties:
         management: true
         order: 0
-        anti_spoofing_protection: false
+#        anti_spoofing_protection: false
       requirements:
         - virtualLink:
             node: VL251
@@ -75,13 +75,5 @@ topology_template:
     VL253:
       type: tosca.nodes.nfv.VL
       properties:
-        network_name: net1
+        network_name: net0
         vendor: Tacker
-
-#    FIP252:
-#      type: tosca.nodes.network.FloatingIP
-#      properties:
-#        floating_network: public
-#      requirements:
-#        - link:
-#          node: CP252

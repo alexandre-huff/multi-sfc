@@ -1,9 +1,9 @@
 tosca_definitions_version: tosca_simple_profile_for_nfv_1_0_0
 
-description: Ubuntu VXLAN Template
+description: Ubuntu GRE Template
 
 metadata:
-  template_name: ubuntu-vxlan-vnfd
+  template_name: ubuntu-gre-vnfd
 
 topology_template:
   node_templates:
@@ -19,12 +19,12 @@ topology_template:
         image: ubuntu-server
         availability_zone: nova
         mgmt_driver: noop
-        name: linux-vxlan
+        name: linux-gre
         key_name: mykey
         user_data_format: RAW
         user_data: |
           #!/bin/sh
-          sed -i -e 's/\ localhost/\ localhost\ linux-vxlan/' /etc/hosts
+          sed -i -e 's/\ localhost/\ localhost\ linux-gre/' /etc/hosts
           sed -i -e 's/PasswordAuthentication/#PasswordAuthentication/' /etc/ssh/sshd_config
           systemctl restart ssh.service
           echo 'ubuntu:123456' | chpasswd
@@ -52,30 +52,31 @@ topology_template:
           runuser -l ubuntu -c "curl http://200.17.212.241:5050/tunnel/em > ~/em.py"
           runuser -l ubuntu -c "python3 ~/em.py &"
 
-    CP301:
+    CP321:
       type: tosca.nodes.nfv.CP.Tacker
       properties:
         management: true
         order: 0
+# Se desabilitar o port_security o MASQUERADE nao funciona
 #        anti_spoofing_protection: false
       requirements:
         - virtualLink:
-            node: VL301
+            node: VL321
         - virtualBinding:
             node: VDU1
 
-    CP302:
+    CP322:
       type: tosca.nodes.nfv.CP.Tacker
       properties:
         order: 1
         anti_spoofing_protection: false
       requirements:
         - virtualLink:
-            node: VL302
+            node: VL322
         - virtualBinding:
             node: VDU1
             
-    CP303:
+    CP323:
       type: tosca.nodes.nfv.CP.Tacker
       properties:
         order: 2
@@ -83,23 +84,23 @@ topology_template:
 #        anti_spoofing_protection: false
       requirements:
         - virtualLink:
-            node: VL303
+            node: VL323
         - virtualBinding:
             node: VDU1
 
-    VL301:
+    VL321:
       type: tosca.nodes.nfv.VL
       properties:
         network_name: net_mgmt
         vendor: Tacker
 
-    VL302:
+    VL322:
       type: tosca.nodes.nfv.VL
       properties:
         network_name: net0
         vendor: Tacker
 
-    VL303:
+    VL323:
       type: tosca.nodes.nfv.VL
       properties:
         network_name: public
