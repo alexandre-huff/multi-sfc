@@ -6,7 +6,7 @@ from flask import request, jsonify, Flask
 from subprocess import Popen, PIPE
 
 
-SCRIPT = '/opt/tunnel'
+SCRIPT = '{}/tunnel'.format(os.getcwd())
 SERVER = '200.17.212.241:5050'
 
 app = Flask(__name__)

@@ -1350,7 +1350,7 @@ class TackerAgent(implements(NFVOAgents)):
             vnf_data = queue.get()
 
             if vnf_data['status'] == OK:
-                vnf_instance_list.append(vnf_data['vnf_id'])
+                # vnf_instance_list.append(vnf_data['vnf_id'])
                 vnfd_name = vnf_data['vnfd_name']
                 vnf_mapping[vnfd_name] = vnf_data['vnf_id']
             else:
@@ -1359,6 +1359,12 @@ class TackerAgent(implements(NFVOAgents)):
 
             queue.task_done()
         # Threads to instantiate VNFs up to here!!!
+
+        # VNF instance list needs to be ordered according to the VNFFGD to avoid errors on instantiating tunnels
+        # This is required because this version of Tacker agent instantiates VNFFGs using threads instead of
+        # using a single call to create a NS from a NSD
+        for vnfd_name in constituent_vnfs:
+            vnf_instance_list.append(vnf_mapping[vnfd_name])
 
         # Rollback action if a given VNF fails on instantiating
         if error:

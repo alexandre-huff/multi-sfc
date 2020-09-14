@@ -32,7 +32,7 @@ domains:
         username: admin
         password: admin
         tenant-name: admin
-        vim-name: VIM241
+        vim-name: VIM-USSURI
         vim-username: admin
         vim-password: devstack
         vim-type: openstack

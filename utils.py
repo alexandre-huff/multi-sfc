@@ -66,9 +66,9 @@ def unique_id():
 
 
 tunnel_config_scripts = {
-    'vxlan': 'em/vxlan-alpine.sh',
-    'ipsec': 'em/ipsec-alpine.sh',
-    'gre'  : 'em/gre-alpine.sh'
+    'vxlan': 'em/vxlan.sh',
+    'ipsec': 'em/ipsec.sh',
+    'gre'  : 'em/gre.sh'
 }
 
 

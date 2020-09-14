@@ -7,6 +7,13 @@ import logging
 import os
 import sys
 import inspect
+
+# running outside server.py
+# currentdir = os.path.dirname(os.path.realpath(__file__))
+# parentdir = os.path.dirname(currentdir)
+# sys.path.append(parentdir)
+# up to here
+
 from exceptions import MultiSFCException
 from utils import socket_polling, OK
 
@@ -282,18 +289,18 @@ class IPSecTunnel:
 if __name__ == "__main__":
 
     try:
-        # ipsec = IPSecTunnel('192.168.240.23')
-        vxlan = VXLANTunnel('192.168.240.29')
+        ipsec = IPSecTunnel('192.168.240.15')
+        # vxlan = VXLANTunnel('192.168.240.29')
     except TimeoutError as e:
         print(str(e))
         sys.exit(0)
 
-    # resp = ipsec.get_networks()['response']
-    resp = vxlan.get_networks()['response']
+    resp = ipsec.get_networks()['response']
+    # resp = vxlan.get_networks()['response']
     print(resp)
 
-    # response = ipsec.start(resp['wan_ip'], '172.24.241.3', '10.10.0.0/24', '10.10.1.0/24', True)
-    response = vxlan.start(resp['wan_ip'], '172.24.241.24', False, '10.10.1.0/24', False)
+    response = ipsec.start(resp['wan_ip'], '172.24.241.95', '10.10.1.0/24', '10.10.0.0/24', True)
+    # response = vxlan.start(resp['wan_ip'], '172.24.241.24', False, '10.10.1.0/24', False)
     # response = vxlan.stop()
     print(response)
     # print(response.json())

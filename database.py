@@ -16,7 +16,7 @@ logger = logging.getLogger('database')
 
 class DatabaseConnection:
 
-    # We don't need Singleton anymore, as we are using multi-processing instead of multi-threading in web server.
+    # We no longer need a Singleton, as we are using multi-processing instead of multi-threading in web server.
     # So all forked process in requests must open a new connection to the database
     #
     __instance = None
@@ -29,13 +29,14 @@ class DatabaseConnection:
         return cls.__instance
 
     def __init__(self):
-        self.client = MongoClient(host='localhost', port=27017, maxPoolSize=200)
+        self.client = MongoClient(host='localhost', port=27017, maxPoolSize=200, serverSelectionTimeoutMS=5000)
 
         logger.debug("Opening database connection...")
 
         try:
             # this command is just used to verify the connection to the Mongo Database
             # see MongoClient() docs
+            # also could be: self.client.server_info() which raises ServerSelectionTimeoutError
             self.client.admin.command('ismaster')
         except ConnectionFailure as e:
             logger.critical("MongoDB Server not available! %s", e)
