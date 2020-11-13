@@ -2,16 +2,14 @@ nsd:nsd-catalog:
   nsd:
   - constituent-vnfd:
     - member-vnf-index: 1
-      vnfd-id-ref: gre-server-public_vnfd
+      vnfd-id-ref: gre-alpine-public_vnfd
     - member-vnf-index: 2
-      vnfd-id-ref: ubuntu-forwarder1_vnfd
-    - member-vnf-index: 3
-      vnfd-id-ref: ubuntu-forwarder2_vnfd
+      vnfd-id-ref: alpine-forwarder2_vnfd
     description: Network Service Template
-    id: 6ea60f60-c471-479f-8de8-2a12145f9a9a
+    id: beaa904c-f8ba-4a8e-9b21-a07dcda037e6
     logo: osm_2x.png
-    name: osm-sfc-seg1
-    short-name: osm-sfc-seg1
+    name: test-seg2
+    short-name: test-seg2
     vendor: OSM
     version: '1.0'
     vld:
@@ -20,31 +18,25 @@ nsd:nsd-catalog:
       vnfd-connection-point-ref:
       - member-vnf-index-ref: 1
         vnfd-connection-point-ref: vnf-cp0
-        vnfd-id-ref: gre-server-public_vnfd
+        vnfd-id-ref: gre-alpine-public_vnfd
       - member-vnf-index-ref: 2
         vnfd-connection-point-ref: vnf-cp0
-        vnfd-id-ref: ubuntu-forwarder1_vnfd
-      - member-vnf-index-ref: 3
-        vnfd-connection-point-ref: vnf-cp0
-        vnfd-id-ref: ubuntu-forwarder2_vnfd
+        vnfd-id-ref: alpine-forwarder2_vnfd
     - id: vld2
       vim-network-name: net1
       vnfd-connection-point-ref:
       - member-vnf-index-ref: 1
         vnfd-connection-point-ref: vnf-cp1
-        vnfd-id-ref: gre-server-public_vnfd
+        vnfd-id-ref: gre-alpine-public_vnfd
       - member-vnf-index-ref: 2
         vnfd-connection-point-ref: vnf-cp1
-        vnfd-id-ref: ubuntu-forwarder1_vnfd
-      - member-vnf-index-ref: 3
-        vnfd-connection-point-ref: vnf-cp1
-        vnfd-id-ref: ubuntu-forwarder2_vnfd
+        vnfd-id-ref: alpine-forwarder2_vnfd
     - id: vld3
       vim-network-name: public
       vnfd-connection-point-ref:
       - member-vnf-index-ref: 1
         vnfd-connection-point-ref: vnf-cp2
-        vnfd-id-ref: gre-server-public_vnfd
+        vnfd-id-ref: gre-alpine-public_vnfd
     vnffgd:
     - classifier:
       - id: class1
@@ -52,13 +44,12 @@ nsd:nsd-catalog:
         - destination-port: '8080'
           id: match1
           ip-proto: '6'
-        - id: match2
-          ip-proto: '1'
+          source-ip-address: 10.10.0.97
         member-vnf-index-ref: 1
         name: class1-name
         rsp-id-ref: rsp1
         vnfd-connection-point-ref: vnf-cp1
-        vnfd-id-ref: gre-server-public_vnfd
+        vnfd-id-ref: gre-alpine-public_vnfd
       description: VNFFG1 Template
       id: vnffg1
       name: vnffg1
@@ -68,12 +59,9 @@ nsd:nsd-catalog:
         vnfd-connection-point-ref:
         - member-vnf-index-ref: 2
           order: 0
-          vnfd-connection-point-ref: vnf-cp1
-          vnfd-id-ref: ubuntu-forwarder1_vnfd
-        - member-vnf-index-ref: 3
-          order: 1
-          vnfd-connection-point-ref: vnf-cp1
-          vnfd-id-ref: ubuntu-forwarder2_vnfd
+          vnfd-egress-connection-point-ref: vnf-cp1
+          vnfd-id-ref: alpine-forwarder2_vnfd
+          vnfd-ingress-connection-point-ref: vnf-cp1
       short-name: vnffg1-name
       vendor: ufpr
       version: '1.0'

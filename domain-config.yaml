@@ -32,8 +32,8 @@ domains:
         username: admin
         password: admin
         tenant-name: admin
-        vim-name: VIM-USSURI
+        vim-name: VIM240
         vim-username: admin
-        vim-password: devstack
+        vim-password: AIbxwOQKLyNhBBfJeqE9mSIE63PLrVgjJjbU3y35
         vim-type: openstack
         tunnel: gre

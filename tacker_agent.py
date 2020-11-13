@@ -608,20 +608,11 @@ class TackerAgent(implements(NFVOAgents)):
             vnffg_id = vnffg['id']
             name = vnffg['name']
             state = vnffg['status']
-            # desc = vnffg['description']
-            criteria = vnffg['attributes']['vnffgd']['topology_template']['node_templates']['Forwarding_path1'] \
-                            ['properties']['policy']['criteria']
-            policies = []
-            for classifier in criteria:
-                data = classifier['classifier']
-                data.pop('network_src_port_id')
-                policies.append(data)
 
             vnffgs.append({
                 'id': vnffg_id,
                 'name': name,
                 'status': state,
-                'policy': policies,
                 'vnf_chain': nfps[vnffg['forwarding_paths']],
                 'platform': TACKER_NFVO
             })
@@ -1041,7 +1032,7 @@ class TackerAgent(implements(NFVOAgents)):
 
         Raises
         ------
-            NFVOAgentsException
+            NFVOAgentsException, NFVOAgentOptions
 
         ReRaises
         ------
@@ -1066,7 +1057,7 @@ class TackerAgent(implements(NFVOAgents)):
             # Only VNFs instantiated by this framework can be used as origin,
             # as we need get information of its CP on VNF Packages
             if not data:
-                raise NFVOAgentsException(ERROR, 'The chose VNF was not instantiated by this framework!')
+                raise NFVOAgentsException(ERROR, 'The chosen VNF was not instantiated by this framework!')
 
             vnf_pkg_id = data[0]['vnf_pkg_id']
             catalog = database.list_catalog(vnf_pkg_id=vnf_pkg_id)

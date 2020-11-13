@@ -330,12 +330,12 @@ if __name__ == "__main__":
     openstack = OpenStackAgent('http://tacker-nfvo.local:35357/v3',
                                'admin',
                                'AIbxwOQKLyNhBBfJeqE9mSIE63PLrVgjJjbU3y35',
-                               'admin'
-                               'test')
+                               'admin',
+                               'VIM240')
     # vms = openstack.list_vms()
     # print(vms)
     # openstack.configure_networks()
     # openstack.configure_route("10.10.1.0/24", "179.24.1.0/24", "10.10.0.8")
     # openstack.configure_security_policies(6, 9090, 9090)
     # openstack._get_router_by_ip_address('10.10.1.0/24')
-    openstack.get_fip_router_interface('net1')
+    print(openstack.get_fip_router_interface('net1'))

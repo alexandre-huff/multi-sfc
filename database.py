@@ -244,7 +244,7 @@ class DatabaseConnection:
             raise DatabaseException(ERROR, str(e))
 
     def insert_sfc_instance(self, sfc_name, multi_sfc_id, vnf_instances, nsd_id, ns_id, segment_name,
-                            domain_id, nfvo_id):
+                            domain_id, nfvo_id, policies):
         """Inserts data in SFC_Instances collection in MongoDB
 
         :param sfc_name: Name of the SFC
@@ -255,6 +255,7 @@ class DatabaseConnection:
         :param segment_name: Name of the SFC Segment
         :param domain_id: The domain ID on which the SFC is running
         :param nfvo_id: The nfvo ID on which the SFC is running
+        :param policies: The configured classifier policies of this segment
         :return: the id of the inserted SFC
 
         Raises
@@ -270,7 +271,8 @@ class DatabaseConnection:
                 'ns_id': ns_id,
                 'segment_name': segment_name,
                 'domain_id': domain_id,
-                'nfvo_id': nfvo_id
+                'nfvo_id': nfvo_id,
+                'classifier': policies
                         })
             if not data.inserted_id:
                 raise MultiSFCException("SFC Instance not inserted in database!")

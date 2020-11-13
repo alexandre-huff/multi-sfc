@@ -61,10 +61,10 @@ class Core:
         config_data = yaml.full_load(raw_data)
 
         tacker_keys = ['id', 'name', 'platform', 'auth_url', 'username', 'password', 'tenant-name',
-                       'vim-name', 'vim-type', 'tunnel']
+                       'vim-name', 'vim-username', 'vim-password', 'vim-type', 'tunnel']
 
         osm_keys = ['id', 'name', 'platform', 'host', 'username', 'password', 'tenant-name',
-                    'vim-name', 'vim-type', 'tunnel']
+                    'vim-name', 'vim-username', 'vim-password', 'vim-type', 'tunnel']
 
         try:
             for domain in config_data['domains']:
@@ -79,7 +79,7 @@ class Core:
                     if missing_keys:
                         # removing the '[' and ']' chars
                         missing_keys = str(missing_keys)[1:-1]
-                        logger.critical("Missing key(s) %s at %s -> 'nfvos:' on %s file", missing_keys,
+                        logger.critical("Missing key(s) %s in 'nfvos:' at %s in %s file", missing_keys,
                                         domain['id'], DOMAIN_CATALOG)
                         exit(1)
 
@@ -127,8 +127,9 @@ class Core:
 
                 elif platform == OSM_NFVO:
                     nfvo['nfvo_agent'] = OSMAgent(nfvo['host'], nfvo['username'], nfvo['password'],
-                                                  nfvo['tenant-name'], nfvo['vim-name'], domain['id'],
-                                                  domain['name'], nfvo['id'], nfvo['name'])
+                                                  nfvo['tenant-name'], nfvo['vim-name'], nfvo['vim-username'],
+                                                  nfvo['vim-password'], domain['id'], domain['name'],
+                                                  nfvo['id'], nfvo['name'])
 
                 else:
                     msg = "NFV platform '%s' not supported! Check %s file." % (platform, DOMAIN_CATALOG)
@@ -889,23 +890,27 @@ class Core:
 
         origin = policy_data['origin']
         src_id = policy_data.get('src_id')
-
         # resource means the CP_out
         cp_out = policy_data.get('resource')
 
-        # getting the VNF Package information from src_id
-        vnf = database.list_vnf_instances(vnf_id=src_id)
-        try:
-            vnfp = database.list_catalog(vnf_pkg_id=vnf[0]['vnf_pkg_id'])[0]
-        except (IndexError, KeyError):
+        if origin == INTERNAL:
+
+            # getting the VNF Package information from src_id
+            vnf = database.list_vnf_instances(vnf_id=src_id)
             try:
-                vnfp = database.list_catalog(vnf_pkg_id=src_id)[0]
-            except IndexError:
-                vnfp = None
+                vnfp = database.list_catalog(vnf_pkg_id=vnf[0]['vnf_pkg_id'])[0]
+            except (IndexError, KeyError):
+                try:
+                    vnfp = database.list_catalog(vnf_pkg_id=src_id)[0]
+                except IndexError:
+                    vnfp = None
+
+            try:
+                self.validate_sfc_domain_nfvo_vnf_package(vnfp, domain_id, nfvo_id)
+            except MultiSFCException as e:
+                return {'status': ERROR, 'reason': str(e)}
 
         try:
-            self.validate_sfc_domain_nfvo_vnf_package(vnfp, domain_id, nfvo_id)
-
             sfc_template[0]['sfc_template'] = nfvo_agent.configure_traffic_src_policy(
                 sfc_template[0]['sfc_template'], origin, src_id, cp_out, database)
 
@@ -913,8 +918,6 @@ class Core:
             return {'status': op.status, 'cp_list': op.cp_list}
         except (NFVOAgentsException, DatabaseException) as e:
             return {'status': e.status, 'reason': e.reason}
-        except MultiSFCException as e:
-            return {'status': ERROR, 'reason': str(e)}
 
         # debug
         logger.debug('SFC Template UUID: %s\n%s', policy_data['sfc_uuid'],
@@ -1126,8 +1129,10 @@ class Core:
             if 'incoming_vnf' in segment:
                 sfc['vnf_instances'].insert(0, segment['incoming_vnf'])
 
+            policies = nfvo_agent.get_policies(segment['sfc_template'])
+
             database.insert_sfc_instance(sfc_name, sfc_uuid, sfc['vnf_instances'], sfc['nsd_id'],
-                                         sfc['ns_id'], segment_name, domain_id, nfvo_id)
+                                         sfc['ns_id'], segment_name, domain_id, nfvo_id, policies)
 
             # Configuring traffic policy rules (firewall) for each SFC segment
             vim_agent = nfvo_agent.get_vim_agent_instance()
@@ -1267,7 +1272,7 @@ class Core:
 
     def destroy_sfc(self, multi_sfc_id):
         """Destroy all segments of a Multi-SFC
-    
+
         :param multi_sfc_id: the multi-sfc unique identifier stored in database
         :return: OK if succeed, or ERROR and its reason if not
         """
@@ -1309,7 +1314,8 @@ class Core:
                 sfc['ns_id']: {
                     'multi_sfc_id': sfc['multi_sfc_id'],
                     'sfc_name': sfc['sfc_name'],
-                    'vnf_instances': sfc['vnf_instances']
+                    'vnf_instances': sfc['vnf_instances'],
+                    'classifier': sfc.get('classifier')
                 }
             }
             multi_sfc_data.update(segment)
@@ -1326,9 +1332,11 @@ class Core:
                             sfc['sfc_name'] = multi_sfc_data.get(sfc['id']).get('sfc_name')
                             # replacing current vnf_chain
                             sfc['vnf_chain'] = multi_sfc_data.get(sfc['id']).get('vnf_instances')
+                            sfc['policy'] = multi_sfc_data.get(sfc['id']).get('classifier')
                         except (AttributeError, KeyError):
                             sfc['multi_sfc_id'] = 'None'
                             sfc['sfc_name'] = 'None'
+                            sfc['policy'] = 'None'
 
                         sfc['domain_name'] = domain['name']
                         sfc['nfvo_name'] = nfvo['name']

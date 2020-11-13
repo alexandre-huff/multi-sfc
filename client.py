@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
 import json
@@ -278,7 +278,7 @@ def create_vnf():
     if not catalog:
         return
 
-    print("\nChoose a VNF to instantiate by their Catalog SEQ, or 0 to exit")
+    print("\nChoose a VNF to instantiate by its Catalog SEQ, or 0 to exit")
     seq = int(input("\nSEQ > "))
 
     if seq <= 0:
@@ -726,10 +726,12 @@ def list_sfcs():
         table = PrettyTable(["SEQ", "Multi-SFC", "Segment Name", "Status", "Domain", "Platform",
                              "Platform Instance", "Service Function Path", "Policy"])
 
+        table.max_width.update({"Multi-SFC": 20, "Segment Name": 25, "Policy": 35})
+
         index = 0
         for sfc in sfcs:
             index += 1
-            row = [index, sfc['multi_sfc_id'], sfc['name'], sfc['status'], sfc['domain_name'], sfc['platform'],
+            row = [index, sfc['sfc_name'], sfc['name'], sfc['status'], sfc['domain_name'], sfc['platform'],
                    sfc['nfvo_name'], '\n'.join(sfc['vnf_chain']) + '\n', yaml.safe_dump(sfc['policy'])]
             table.add_row(row)
 
