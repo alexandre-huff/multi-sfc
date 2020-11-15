@@ -30,19 +30,25 @@ class TackerAgent(implements(NFVOAgents)):
     """Implementation of the Tacker Agent."""
 
     def __init__(self, auth_url, username, password, tenant_name, vim_name, vim_username, vim_password,
-                 domain_id, domain_name, nfvo_id, nfvo_name):
+                 domain_id, domain_name, nfvo_id, nfvo_name, federation_protocol=None, idp_name=None, idp_url=None):
         self.vim_name = vim_name
-        self._vim_username = vim_username
-        self._vim_password = vim_password
+        if federation_protocol:
+            vim_username = username
+            vim_password = password
 
         self.nfvo_name = nfvo_name
         self.domain_name = domain_name
         self.domain_id = domain_id
         self.nfvo_id = nfvo_id
 
-        self.tacker = Tacker(auth_url, username, password, tenant_name)
+        self.tacker = Tacker(auth_url, username, password, tenant_name, federation_protocol, idp_name, idp_url)
 
         self.vim_id = self._get_vim_id()
+        self.vim_agent = self._init_vim_agent_instance(vim_username,
+                                                        vim_password,
+                                                        federation_protocol,
+                                                        idp_name,
+                                                        idp_url)
 
     def _get_vim_id(self):
         vims = self.tacker.vim_list()
@@ -55,7 +61,7 @@ class TackerAgent(implements(NFVOAgents)):
         logger.critical(msg)
         exit(1)
 
-    def get_vim_agent_instance(self):
+    def _init_vim_agent_instance(self, vim_username, vim_password, federation_protocol, idp_name, idp_url):
         """Instantiates a VIM Agent
 
         Raises
@@ -69,12 +75,19 @@ class TackerAgent(implements(NFVOAgents)):
             raise NFVOAgentsException(ERROR, msg)
 
         vim_agent = OpenStackAgent(vim_data['auth_url'],
-                                   self._vim_username,
-                                   self._vim_password,
+                                   vim_username,
+                                   vim_password,
                                    vim_data['vim_project']['name'],
-                                   self.vim_name
+                                   self.vim_name,
+                                   federation_protocol,
+                                   idp_name,
+                                   idp_url
                                    )
         return vim_agent
+
+    def get_vim_agent_instance(self):
+        """Returns the VIM Agent instance of this NFVO Agent instance"""
+        return self.vim_agent
 
     @staticmethod
     def vnfd_json_yaml_parser(vnfd):
@@ -1088,6 +1101,15 @@ class TackerAgent(implements(NFVOAgents)):
                 if cp_name not in vnf_pkg_cps:
                     raise NFVOAgentsException(ERROR, 'Invalid CP!')
 
+            # TODO requires further changes (if using openstack VIM)
+            # we need to allow users with role "member" in the project to get access to the network_src_port_id
+            # current implementation gets this information getting the VNF resources VDU and CP from tacker API,
+            # which requires the admin role. One way to fetch the network_src_port_id is as follows:
+            # 1. Get the VDU ip address from the vnf (vnf list)
+            # 2. Get the server instance that has its ip address as same as the VDU ip address
+            # 3. Use the "cp_name" network name to get the IP address of the server instance
+            # 4. Get the port list of the corresponding network name (other filters can be applied)
+            # 5. Return the ID of the port that matches with the ip address found in step 3.
             net_src_port_id = self.get_vnf_nfvo_resource_id(src_id, cp_name)
 
         elif origin == EXTERNAL:

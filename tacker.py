@@ -8,6 +8,7 @@ from keystoneauth1 import session
 from tackerclient.common.exceptions import TackerClientException
 from tackerclient.v1_0 import client as tacker_client
 from keystoneclient.v3 import client as keystone_client
+from keystoneauth1.extras._saml2.v3 import Saml2Password
 
 from exceptions import NFVOAgentsException
 from utils import ERROR
@@ -20,33 +21,39 @@ class Tacker:
     Implementation of the Tacker Client REST API interface.
     """
 
-    def __init__(self, auth_url, username, password, project_name):
+    def __init__(self, auth_url, username, password, project_name,
+                federation_protocol=None, idp_name=None, idp_url=None):
         """Instantiates a Tacker client
 
         Raises
         ------
             NFVOAgentsException
         """
-        auth = v3.Password(auth_url=auth_url,
-                           username=username,
-                           password=password,
-                           project_name=project_name,
-                           user_domain_name="default",
-                           project_domain_name="default")
+        if federation_protocol:
+            auth = Saml2Password(auth_url,
+                                idp_name,
+                                federation_protocol,
+                                idp_url,
+                                username,
+                                password,
+                                project_name=project_name,
+                                project_domain_name="default")
+        else:
+            auth = v3.Password(auth_url=auth_url,
+                                username=username,
+                                password=password,
+                                project_name=project_name,
+                                user_domain_name="default",
+                                project_domain_name="default")
 
         self.session = session.Session(auth=auth)
         self.keystone = keystone_client.Client(session=self.session)
-        services = self.keystone.services.list(name='tacker')
 
-        if len(services) == 1:
-            endpoint = self.keystone.endpoints.list(service=services[0], interface='public')
+        endpoint = auth.get_auth_ref(self.session).service_catalog.url_for(service_name='tacker')
 
-            if len(endpoint) == 1:
-                self.tacker = tacker_client.Client(session=self.session,
-                                                   endpoint_url=endpoint[0].url)
-            else:
-                raise NFVOAgentsException(ERROR, "Tacker public endpoint not found")
-
+        if endpoint:
+            self.tacker = tacker_client.Client(session=self.session,
+                                               endpoint_url=endpoint)
         else:
             raise NFVOAgentsException(ERROR, "Tacker service not found")
 
@@ -233,6 +240,8 @@ class Tacker:
         """ Show VDU and CP of a given VNF """
 
         try:
+            # this function requires that the user has the role "admin" at the current project
+            # tacker does not allow users having the role "member" to access those vnf resources
             return self.tacker.list_vnf_resources(vnf_id)['resources']
 
         except (TackerClientException, KeyError) as e:
@@ -267,9 +276,12 @@ class Tacker:
 
 
 if __name__ == "__main__":
-    tacker = Tacker('http://tacker-nfvo.local:35357/v3',
-                    'admin',
-                    'AIbxwOQKLyNhBBfJeqE9mSIE63PLrVgjJjbU3y35',
-                    'admin')
+    # tacker = Tacker("http://tacker-nfvo.local:35357/v3",
+    #                 "admin",
+    #                 "dOBkwXa8OAJ2UrVWG8GpZVdclmDJpBbCIgxITC2p",
+    #                 "admin")
+    tacker = Tacker("http://tacker-nfvo.local:5000/v3", "rick", "psych",
+                    "federated_project", "saml2", "samltest",
+                    "https://samltest.id/idp/profile/SAML2/SOAP/ECP")
 
-    tacker.vim_show('')
+    print(tacker.vim_list())

@@ -72,6 +72,15 @@ class Core:
                 for nfvo in domain['nfvos']:
                     if nfvo['platform'] == TACKER_NFVO:
                         nfvo_keys = tacker_keys
+                        if 'federation' in nfvo:  # federation is not required
+                            # when federation is enabled, all federation fields are required
+                            fkeys = ['protocol', 'idp-name', 'idp-url']
+                            mkeys = [k for k in fkeys if k not in nfvo['federation'].keys()]
+                            if mkeys:  # federation missing keys
+                                mkeys = str(mkeys)[1:-1]  # removing the '[' ']' chars
+                                logger.critical("Missing key(s) {} at '{}->nfvos->{}->federation' in {}".
+                                                format(mkeys, domain.get('id'), nfvo.get('id'), DOMAIN_CATALOG))
+                                exit(1)
                     else:
                         nfvo_keys = osm_keys
 
@@ -79,7 +88,7 @@ class Core:
                     if missing_keys:
                         # removing the '[' and ']' chars
                         missing_keys = str(missing_keys)[1:-1]
-                        logger.critical("Missing key(s) %s in 'nfvos:' at %s in %s file", missing_keys,
+                        logger.critical("Missing key(s) %s at '%s->nfvos' in %s", missing_keys,
                                         domain['id'], DOMAIN_CATALOG)
                         exit(1)
 
@@ -120,10 +129,21 @@ class Core:
                 platform = nfvo['platform']
 
                 if platform == TACKER_NFVO:
-                    nfvo['nfvo_agent'] = TackerAgent(nfvo['auth_url'], nfvo['username'], nfvo['password'],
-                                                     nfvo['tenant-name'], nfvo['vim-name'], nfvo['vim-username'],
-                                                     nfvo['vim-password'], domain['id'], domain['name'],
-                                                     nfvo['id'], nfvo['name'])
+                    federation = nfvo.get('federation')
+                    if federation:
+                        nfvo['nfvo_agent'] = TackerAgent(nfvo['auth_url'], nfvo['username'], nfvo['password'],
+                                                        nfvo['tenant-name'], nfvo['vim-name'], nfvo['vim-username'],
+                                                        nfvo['vim-password'], domain['id'], domain['name'],
+                                                        nfvo['id'], nfvo['name'],
+                                                        federation_protocol=federation['protocol'],
+                                                        idp_name=federation['idp-name'],
+                                                        idp_url=federation['idp-url'])
+
+                    else:
+                        nfvo['nfvo_agent'] = TackerAgent(nfvo['auth_url'], nfvo['username'], nfvo['password'],
+                                                        nfvo['tenant-name'], nfvo['vim-name'], nfvo['vim-username'],
+                                                        nfvo['vim-password'], domain['id'], domain['name'],
+                                                        nfvo['id'], nfvo['name'])
 
                 elif platform == OSM_NFVO:
                     nfvo['nfvo_agent'] = OSMAgent(nfvo['host'], nfvo['username'], nfvo['password'],

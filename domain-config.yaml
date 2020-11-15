@@ -1,3 +1,4 @@
+# we need to write a schema to validate this file
 domains:
   - id: domain1
     name: Domain 1
@@ -7,33 +8,39 @@ domains:
         # platform: tacker|osm
         platform: tacker
         # tacker uses auth_url, osm uses host
-        auth_url: http://tacker-nfvo.local:35357/v3
-        username: admin
-        password: AIbxwOQKLyNhBBfJeqE9mSIE63PLrVgjJjbU3y35
-        tenant-name: admin
+        auth_url: http://tacker-nfvo.local:5000/v3
+        username: rick
+        password: psych
+        tenant-name: federated_project
+        # uncomment the following block to allow federation
+        federation:
+          protocol: saml2
+          idp-name: samltest
+          idp-url: https://samltest.id/idp/profile/SAML2/SOAP/ECP
+
         # a VIM name configured in this NFVO
         vim-name: VIM240
-        vim-username: admin
-        vim-password: AIbxwOQKLyNhBBfJeqE9mSIE63PLrVgjJjbU3y35
+        vim-username: rick
+        vim-password: psych
         # currently only "openstack" is supported
         vim-type: openstack
         # ipsec|vxlan|gre, or it can be left with no value in case of not running a multi-sfc
         tunnel: gre
 
   # if you don't have other domain or nfvo, just comment it
-  - id: domain2
-    name: Domain 2
-    nfvos:
-      - id: osm-site1
-        name: OSM at Domain 2
-        platform: osm
-        # osm uses host, tacker uses auth_url
-        host: osm-nfvo.local
-        username: admin
-        password: admin
-        tenant-name: admin
-        vim-name: VIM240
-        vim-username: admin
-        vim-password: AIbxwOQKLyNhBBfJeqE9mSIE63PLrVgjJjbU3y35
-        vim-type: openstack
-        tunnel: gre
+  # - id: domain2
+  #   name: Domain 2
+  #   nfvos:
+  #     - id: osm-site1
+  #       name: OSM at Domain 2
+  #       platform: osm
+  #       # osm uses host, tacker uses auth_url
+  #       host: osm-nfvo.local
+  #       username: admin
+  #       password: admin
+  #       tenant-name: admin
+  #       vim-name: VIM250
+  #       vim-username: admin
+  #       vim-password: devstack
+  #       vim-type: openstack
+  #       tunnel: gre

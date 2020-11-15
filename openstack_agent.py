@@ -14,8 +14,7 @@ from keystoneauth1 import session
 from novaclient import client as nova_client
 from neutronclient.v2_0 import client as neutron_client
 from keystoneclient.v3 import client as keystone_client
-
-# from urllib3.util import parse_url
+from keystoneauth1.extras._saml2.v3 import Saml2Password
 
 logger = logging.getLogger('openstack_agent')
 
@@ -23,29 +22,35 @@ logger = logging.getLogger('openstack_agent')
 class OpenStackAgent(implements(VIMAgents)):
     """Implementation of the OpenStack Agent"""
 
-    def __init__(self, auth_url, username, password, vim_project_name, vim_name):
+    def __init__(self, auth_url, username, password, vim_project_name, vim_name,
+                federation_protocol=None, idp_name=None, idp_url=None):
 
-        auth = v3.Password(auth_url=auth_url,
-                           username=username,
-                           password=password,
-                           project_name=vim_project_name,
-                           user_domain_name="default",
-                           project_domain_name="default")
+        if federation_protocol:
+            auth = Saml2Password(auth_url,
+                                idp_name,
+                                federation_protocol,
+                                idp_url,
+                                username,
+                                password,
+                                project_name=vim_project_name,
+                                project_domain_name="default")
+        else:
+            auth = v3.Password(auth_url=auth_url,
+                               username=username,
+                               password=password,
+                               project_name=vim_project_name,
+                               user_domain_name="default",
+                               project_domain_name="default")
+
+
 
         self.session = session.Session(auth=auth)
         self.nova = nova_client.Client('2', session=self.session)
         self.neutron = neutron_client.Client(session=self.session)
         self.keystone = keystone_client.Client(session=self.session)
 
-        # self.ip_address = parse_url(auth_url).host
-        self.project_id = self._get_project_id(vim_project_name)
+        self.project_id = auth.get_auth_ref(self.session).project_id
         self.vim_name = vim_name
-
-    def _get_project_id(self, project_name):
-        projects = self.keystone.projects.list()
-        for project in projects:
-            if project.name == project_name:
-                return project.id
 
     def _get_router_by_ip_address(self, subnet_cidr):
         """Retrieves a router by any of its subnet address
@@ -327,15 +332,25 @@ class OpenStackAgent(implements(VIMAgents)):
 
 
 if __name__ == "__main__":
-    openstack = OpenStackAgent('http://tacker-nfvo.local:35357/v3',
-                               'admin',
-                               'AIbxwOQKLyNhBBfJeqE9mSIE63PLrVgjJjbU3y35',
-                               'admin',
-                               'VIM240')
+    # openstack = OpenStackAgent("http://tacker-nfvo.local:35357/v3",
+    #                            "admin",
+    #                            "dOBkwXa8OAJ2UrVWG8GpZVdclmDJpBbCIgxITC2p",
+    #                            "admin",
+    #                            "VIM240")
+    openstack = OpenStackAgent("http://tacker-nfvo.local:5000/v3",
+                               "rick",
+                               "psych",
+                               "federated_project",
+                               "VIM240",
+                               "saml2",
+                               "samltest",
+                               "https://samltest.id/idp/profile/SAML2/SOAP/ECP")
+
     # vms = openstack.list_vms()
     # print(vms)
     # openstack.configure_networks()
     # openstack.configure_route("10.10.1.0/24", "179.24.1.0/24", "10.10.0.8")
     # openstack.configure_security_policies(6, 9090, 9090)
     # openstack._get_router_by_ip_address('10.10.1.0/24')
-    print(openstack.get_fip_router_interface('net1'))
+    # openstack.get_fip_router_interface('net1')
+    print(openstack.list_vms())
