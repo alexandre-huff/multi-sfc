@@ -3,12 +3,14 @@
 
 import json
 import os
-import requests
 import base64
 import yaml
 from prettytable import PrettyTable
 from utils import *
+from requests import Session
+from ecp.requests_ecp import HTTPECPAuth
 
+sess = Session()
 base_url = "http://localhost:5050"
 headers = {'Content-Type': 'application/json'}
 
@@ -146,7 +148,7 @@ def include_package():
         return
 
     while True:
-        response = requests.post(url, data=json.dumps(vnf_package), headers=headers).json()
+        response = sess.post(url, data=json.dumps(vnf_package), headers=headers).json()
 
         if response['status'] == OPTIONS:
             print("\n", response['reason'], "\n", sep='')
@@ -242,7 +244,7 @@ def remove_package():
 
     # send vnf_package_id as the first element of the list indexed with the SEQ-1 chosen by user
     url = base_url + '/package/' + vnf_package_id
-    response = requests.delete(url, headers=headers)
+    response = sess.delete(url, headers=headers)
 
     if response.json()['status'] == OK:
         print("VNF Package removed!")
@@ -252,7 +254,7 @@ def remove_package():
 
 def list_catalog():
     url = base_url + '/catalog/vnfs'
-    catalog = requests.get(url, headers=headers).json()
+    catalog = sess.get(url, headers=headers).json()
     catalog = catalog['vnfs']
 
     if not catalog:
@@ -290,7 +292,7 @@ def create_vnf():
         return
 
     while True:
-        response = requests.post(url, data=json.dumps(vnfp_data), headers=headers).json()
+        response = sess.post(url, data=json.dumps(vnfp_data), headers=headers).json()
 
         if response['status'] == OPTIONS:
             print("\n", response['reason'], "\n", sep='')
@@ -414,7 +416,7 @@ def destroy_vnf():
         return
 
     # send vnf_id as the first element of the list indexed with the SEQ-1 chosen by user
-    response = requests.delete(url + vnf_id, headers=headers).json()
+    response = sess.delete(url + vnf_id, headers=headers).json()
 
     if response['status'] == OK:
         print("VNF destroyed successfully!")
@@ -424,7 +426,7 @@ def destroy_vnf():
 
 def list_vnfs():
     url = base_url + '/vnfs'
-    response = requests.get(url, headers=headers).json()
+    response = sess.get(url, headers=headers).json()
     # print(json.dumps(vnfs, indent=2))
 
     if response['status'] != OK:
@@ -460,9 +462,9 @@ def create_sfc():
     acl_url = sfc_url + '/acl'
     domain_url = base_url + '/catalog/domains'
 
-    sfc_uuid = requests.get(sfc_uuid_url, headers=headers).json()['sfc_uuid']
+    sfc_uuid = sess.get(sfc_uuid_url, headers=headers).json()['sfc_uuid']
 
-    domain_catalog = requests.get(domain_url, headers=headers).json()
+    domain_catalog = sess.get(domain_url, headers=headers).json()
 
     while True:
         header = ["Domain", "Platform Instance", "Project", "VIM Name", "Tunnel"]
@@ -478,7 +480,7 @@ def create_sfc():
         domain_id = domain_catalog[domain_seq]['domain_id']
         nfvo_id = domain_catalog[domain_seq]['nfvo_id']
 
-        catalog = requests.get(catalog_url + '/%s/%s' % (domain_id, nfvo_id), headers=headers).json()['vnfs']
+        catalog = sess.get(catalog_url + '/%s/%s' % (domain_id, nfvo_id), headers=headers).json()['vnfs']
         if not catalog:
             return
 
@@ -514,7 +516,7 @@ def create_sfc():
             }
 
             while True:
-                response = requests.post(vnffg_compose_url, headers=headers, data=json.dumps(vnf_data)).json()
+                response = sess.post(vnffg_compose_url, headers=headers, data=json.dumps(vnf_data)).json()
 
                 if response['status'] == OK:
                     print("VNF included successfully!")
@@ -562,9 +564,7 @@ def create_sfc():
     }
 
     if origin == INTERNAL:
-        nfvo_vnfs = requests.get(sfc_origin_url + '/%s' % sfc_uuid, headers=headers).json()
-        # nfvo_vnfs = requests.get('/'.join([sfc_origin_url, platform]), headers=headers).json()
-        # print(nfvo_vnfs)
+        nfvo_vnfs = sess.get(sfc_origin_url + '/%s' % sfc_uuid, headers=headers).json()
 
         if nfvo_vnfs['status'] != OK:
             print(nfvo_vnfs['status'], nfvo_vnfs['reason'], sep=': ')
@@ -597,7 +597,7 @@ def create_sfc():
             src_id = nfvo_vnfs['vnfs'][seq]['id']
             sfc_origin_data['src_id'] = src_id
 
-            response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
+            response = sess.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
 
             if response['status'] == OK:
                 break
@@ -625,7 +625,7 @@ def create_sfc():
                 seq -= 1
 
     else:  # if origin == EXTERNAL
-        response = requests.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
+        response = sess.post(sfc_origin_url, headers=headers, data=json.dumps(sfc_origin_data)).json()
 
         if response['status'] != OK:
             print(response['status'], response['reason'], sep=': ')
@@ -636,7 +636,7 @@ def create_sfc():
     policy_num = 0
     while True:
         # get ACL list
-        response = requests.get(acl_url + '/%s' % sfc_uuid, headers=headers).json()
+        response = sess.get(acl_url + '/%s' % sfc_uuid, headers=headers).json()
         try:
             acl_list = response['acl']
         except KeyError:
@@ -691,7 +691,7 @@ def create_sfc():
     }
 
     # send ACL criteria to SFC_Core
-    response = requests.post(acl_url, headers=headers, data=json.dumps(acl_data)).json()
+    response = sess.post(acl_url, headers=headers, data=json.dumps(acl_data)).json()
 
     if response['status'] != OK:
         print(response['status'], response['reason'], sep=': ')
@@ -705,7 +705,7 @@ def create_sfc():
     }
 
     # start SFCs
-    response = requests.post(sfc_url + '/start', data=json.dumps(sfc_data), headers=headers).json()
+    response = sess.post(sfc_url + '/start', data=json.dumps(sfc_data), headers=headers).json()
     if response['status'] != OK:
         print(response['status'], response['reason'], sep=': ')
         return
@@ -715,7 +715,7 @@ def create_sfc():
 
 def list_sfcs():
     url = base_url + '/sfc'
-    response = requests.get(url, headers=headers).json()
+    response = sess.get(url, headers=headers).json()
 
     if response['status'] != OK:
         print(response['status'], response['reason'], sep=': ')
@@ -759,7 +759,7 @@ def destroy_sfc():
         return
 
     url = base_url + '/sfc/' + vnffg_id
-    response = requests.delete(url, headers=headers).json()
+    response = sess.delete(url, headers=headers).json()
 
     if response['status'] == OK:
         print("SFC destroyed successfully!")
@@ -767,39 +767,55 @@ def destroy_sfc():
         print("SFC not destroyed! %s" % response['reason'])
 
 
-while True:
-    print("\n1. Include VNF Package")
-    print("2. Remove VNF Package")
-    print("3. Show VNF Catalog")
-    print("4. Instantiate VNF")
-    print("5. Destroy VNF Instance")
-    print("6. Show VNF Instances")
-    print("7. Compose SFC")
-    print("8. Destroy SFC")
-    print("9. Show SFC Instances")
-    print("0. Exit")
+if __name__ == "__main__":
+    raw_data = None
+    try:
+        with open('domain-config.yaml', 'r') as config:
+            raw_data = config.read()
+    except FileNotFoundError:
+        print("File not found: domain-config.yaml")
+        exit(1)
 
-    option = input("\n> ")
+    config_data = yaml.full_load(raw_data)
+    federation = config_data.get('federation')
+    if federation:
+        sess.auth = HTTPECPAuth(federation['idp-url'],
+                                username=federation['username'],
+                                password=federation['password'])
 
-    if option == "1":
-        include_package()
-    elif option == "2":
-        remove_package()
-    elif option == "3":
-        list_catalog()
-    elif option == "4":
-        create_vnf()
-    elif option == "5":
-        destroy_vnf()
-    elif option == "6":
-        list_vnfs()
-    elif option == "7":
-        create_sfc()
-    elif option == "8":
-        destroy_sfc()
-    elif option == "9":
-        list_sfcs()
-    elif option == "0":
-        break
-    else:
-        print("Invalid Option")
+    while True:
+        print("\n1. Include VNF Package")
+        print("2. Remove VNF Package")
+        print("3. Show VNF Catalog")
+        print("4. Instantiate VNF")
+        print("5. Destroy VNF Instance")
+        print("6. Show VNF Instances")
+        print("7. Compose SFC")
+        print("8. Destroy SFC")
+        print("9. Show SFC Instances")
+        print("0. Exit")
+
+        option = input("\n> ")
+
+        if option == "1":
+            include_package()
+        elif option == "2":
+            remove_package()
+        elif option == "3":
+            list_catalog()
+        elif option == "4":
+            create_vnf()
+        elif option == "5":
+            destroy_vnf()
+        elif option == "6":
+            list_vnfs()
+        elif option == "7":
+            create_sfc()
+        elif option == "8":
+            destroy_sfc()
+        elif option == "9":
+            list_sfcs()
+        elif option == "0":
+            break
+        else:
+            print("Invalid Option")

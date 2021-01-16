@@ -60,6 +60,17 @@ class Core:
 
         config_data = yaml.full_load(raw_data)
 
+        federation = config_data.get('federation')
+        if federation:  # federation is not required
+            # when federation is enabled, all federation fields are required
+            fkeys = ['protocol', 'idp-name', 'idp-url', 'username', 'password']
+            mkeys = [k for k in fkeys if k not in federation.keys()]
+            if mkeys:  # federation missing keys
+                mkeys = str(mkeys)[1:-1]  # removing the '[' ']' chars
+                logger.critical("Missing key(s) {} at 'federation' in {}".
+                                format(mkeys, DOMAIN_CATALOG))
+                exit(1)
+
         tacker_keys = ['id', 'name', 'platform', 'auth_url', 'username', 'password', 'tenant-name',
                        'vim-name', 'vim-username', 'vim-password', 'vim-type', 'tunnel']
 
@@ -68,19 +79,9 @@ class Core:
 
         try:
             for domain in config_data['domains']:
-
                 for nfvo in domain['nfvos']:
                     if nfvo['platform'] == TACKER_NFVO:
                         nfvo_keys = tacker_keys
-                        if 'federation' in nfvo:  # federation is not required
-                            # when federation is enabled, all federation fields are required
-                            fkeys = ['protocol', 'idp-name', 'idp-url']
-                            mkeys = [k for k in fkeys if k not in nfvo['federation'].keys()]
-                            if mkeys:  # federation missing keys
-                                mkeys = str(mkeys)[1:-1]  # removing the '[' ']' chars
-                                logger.critical("Missing key(s) {} at '{}->nfvos->{}->federation' in {}".
-                                                format(mkeys, domain.get('id'), nfvo.get('id'), DOMAIN_CATALOG))
-                                exit(1)
                     else:
                         nfvo_keys = osm_keys
 
@@ -124,16 +125,16 @@ class Core:
         return domain_catalog
 
     def _instantiate_nfvo_agents(self):
+        federation = self._config_data.get('federation')
         for domain in self._config_data['domains']:
             for nfvo in domain['nfvos']:
                 platform = nfvo['platform']
 
                 if platform == TACKER_NFVO:
-                    federation = nfvo.get('federation')
                     if federation:
-                        nfvo['nfvo_agent'] = TackerAgent(nfvo['auth_url'], nfvo['username'], nfvo['password'],
-                                                        nfvo['tenant-name'], nfvo['vim-name'], nfvo['vim-username'],
-                                                        nfvo['vim-password'], domain['id'], domain['name'],
+                        nfvo['nfvo_agent'] = TackerAgent(nfvo['auth_url'], federation['username'], federation['password'],
+                                                        nfvo['tenant-name'], nfvo['vim-name'], federation['username'],
+                                                        federation['password'], domain['id'], domain['name'],
                                                         nfvo['id'], nfvo['name'],
                                                         federation_protocol=federation['protocol'],
                                                         idp_name=federation['idp-name'],

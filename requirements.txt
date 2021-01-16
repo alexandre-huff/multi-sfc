@@ -40,3 +40,6 @@ requestsexceptions==1.4.0
 rfc3986==1.4.0
 stevedore==3.2.2
 Werkzeug==1.0.1
+# specific to requests-ecp
+lxml==4.5.0
+requests-kerberos==0.12.0

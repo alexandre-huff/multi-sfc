@@ -1,4 +1,13 @@
 # we need to write a schema to validate this file
+# commenting the following block disables federation
+federation:
+  protocol: saml2
+  idp-name: samltest
+  idp-url: https://samltest.id/idp/profile/SAML2/SOAP/ECP
+  # usernames and passwords for each domain are ignored when federation is enabled
+  username: rick
+  password: psych
+
 domains:
   - id: domain1
     name: Domain 1
@@ -9,19 +18,13 @@ domains:
         platform: tacker
         # tacker uses auth_url, osm uses host
         auth_url: http://tacker-nfvo.local:5000/v3
-        username: rick
-        password: psych
+        username: admin
+        password: dOBkwXa8OAJ2UrVWG8GpZVdclmDJpBbCIgxITC2p
         tenant-name: federated_project
-        # uncomment the following block to allow federation
-        federation:
-          protocol: saml2
-          idp-name: samltest
-          idp-url: https://samltest.id/idp/profile/SAML2/SOAP/ECP
-
         # a VIM name configured in this NFVO
         vim-name: VIM240
-        vim-username: rick
-        vim-password: psych
+        vim-username: admin
+        vim-password: dOBkwXa8OAJ2UrVWG8GpZVdclmDJpBbCIgxITC2p
         # currently only "openstack" is supported
         vim-type: openstack
         # ipsec|vxlan|gre, or it can be left with no value in case of not running a multi-sfc

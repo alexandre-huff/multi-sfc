@@ -4,12 +4,14 @@ services:
     multisfc:
         build: .
         image: multisfc
-        command: /app/server.py
+        # force start flask (not required)
+        # command: /app/server.py
         network_mode: host
         hostname: multisfc
         volumes:
-            - ${PWD}:/app
-            # - ${PWD}/domain-config.yaml:/app/domain-config.yaml:ro
+            - /etc/localtime:/etc/localtime:ro
+            - ${PWD}/repository:/app/repository
+            - ${PWD}:/app:ro
         depends_on:
             - mongodb
             - memcached

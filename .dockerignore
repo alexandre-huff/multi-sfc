@@ -1,0 +1,4 @@
+venv
+scripts
+.*
+__pycache__

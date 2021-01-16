@@ -1,0 +1,6 @@
+The code of this great library was added here since it requires a little fix.
+The idea is to submit a pull request with the fix to the main repository as soon as possible.
+
+The Multi-SFC client application uses this library to authenticate to the federation using ECP.
+
+Git repository: https://github.com/duncanmmacleod/requests-ecp

@@ -1,0 +1,6 @@
+Steps to allow the SP and IdP to communicate:
+
+1. Download the SP metadata at: http://multisfc_address:5050/Shibboleth.sso/Metadata
+2. Submit the downloaded metadata to your IdP*
+
+*Please, check the EntityID configuration of your SP and IDP at the shibboleth.xml
