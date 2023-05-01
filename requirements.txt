@@ -4,7 +4,7 @@ cliff==3.5.0
 cmd2==1.4.0
 debtcollector==2.2.0
 dogpile.cache==1.0.2
-Flask==1.1.2
+Flask==2.3.2
 iso8601==0.1.13
 itsdangerous==1.1.0
 jmespath==0.10.0
